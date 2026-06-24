@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ZeroTrustAuth - Real-time Tracking</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        #map { height: 100vh; width: 100%; }
+        #info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        .status-online { color: green; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>ZeroTrustAuth Monitor</h3>
+        <p>Device: <span id="device-id">android_device_1</span></p>
+        <p>Status: <span id="status" class="status-online">LIVE</span></p>
+        <p>Last Update: <span id="last-update">-</span></p>
+        <hr>
+        <button id="trigger-alarm" style="width: 100%; padding: 10px; background: #EF4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+            TRIGGER REMOTE ALARM
+        </button>
+        <button id="stop-alarm" style="width: 100%; padding: 10px; background: #10B981; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 5px; display: none;">
+            STOP ALARM
+        </button>
+        <button id="trigger-lockdown" style="width: 100%; padding: 10px; background: #000; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 10px;">
+            FORCE REMOTE LOCKDOWN
+        </button>
+        <button id="stop-lockdown" style="width: 100%; padding: 10px; background: #10B981; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 5px; display: none;">
+            RELEASE LOCKDOWN
+        </button>
+    </div>
+    <div id="map"></div>
+
+    <script>
+        const map = L.map('map').setView([0, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        let marker;
+        const deviceId = 'android_device_1';
+
+        const triggerBtn = document.getElementById('trigger-alarm');
+        const stopBtn = document.getElementById('stop-alarm');
+
+        async function toggleAlarm(active) {
+            try {
+                const response = await fetch('/api/alarm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ active })
+                });
+                const result = await response.json();
+                console.log(result.message);
+
+                if (active) {
+                    triggerBtn.style.display = 'none';
+                    stopBtn.style.display = 'block';
+                } else {
+                    triggerBtn.style.display = 'block';
+                    stopBtn.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error toggling alarm:', error);
+            }
+        }
+
+        triggerBtn.addEventListener('click', () => toggleAlarm(true));
+        stopBtn.addEventListener('click', () => toggleAlarm(false));
+
+        const lockBtn = document.getElementById('trigger-lockdown');
+        const unlockBtn = document.getElementById('stop-lockdown');
+
+        async function toggleLockdown(active) {
+            try {
+                const response = await fetch('/api/lockdown', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ active })
+                });
+                const result = await response.json();
+                console.log(result.message);
+
+                if (active) {
+                    lockBtn.style.display = 'none';
+                    unlockBtn.style.display = 'block';
+                } else {
+                    lockBtn.style.display = 'block';
+                    unlockBtn.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error toggling lockdown:', error);
+            }
+        }
+
+        lockBtn.addEventListener('click', () => toggleLockdown(true));
+        unlockBtn.addEventListener('click', () => toggleLockdown(false));
+
+        async function fetchLocation() {
+            try {
+                const response = await fetch(`/api/location/${deviceId}`);
+                const data = await response.json();
+
+                if (data && data.length > 0) {
+                    const latest = data[0];
+                    const pos = [latest.latitude, latest.longitude];
+
+                    if (!marker) {
+                        marker = L.marker(pos).addTo(map);
+                        map.setView(pos, 15);
+                    } else {
+                        marker.setLatLng(pos);
+                    }
+
+                    document.getElementById('last-update').innerText = new Date(latest.timestamp).toLocaleTimeString();
+                }
+            } catch (error) {
+                console.error('Error fetching location:', error);
+            }
+        }
+
+        // Fetch location every 5 seconds
+        setInterval(fetchLocation, 5000);
+        fetchLocation();
+    </script>
+</body>
+</html>
