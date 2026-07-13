@@ -2,23 +2,63 @@ const express = require('express');
 const router = express.Router();
 const Location = require('../models/Location');
 
-// POST /api/location - Save new location data
+// POST /api/:username/location - Save new location data
 router.post('/', async (req, res) => {
     try {
+        const username = req.username; // From middleware in server.js
         const { deviceId, latitude, longitude } = req.body;
-        const newLocation = new Location({ deviceId, latitude, longitude });
+        console.log(`[GPS] Location received from ${username} (${deviceId}): ${latitude}, ${longitude}`);
+
+        const newLocation = new Location({ username, deviceId, latitude, longitude });
         await newLocation.save();
+
+        // Prevent data overflow: Keep only last 100 locations per device
+        try {
+            const MAX_HISTORY = 100;
+            const count = await Location.countDocuments({ username, deviceId });
+            if (count > MAX_HISTORY) {
+                const oldestToKeep = await Location.find({ username, deviceId })
+                    .sort({ timestamp: -1 })
+                    .skip(MAX_HISTORY - 1)
+                    .limit(1);
+
+                if (oldestToKeep.length > 0) {
+                    await Location.deleteMany({
+                        username,
+                        deviceId,
+                        timestamp: { $lt: oldestToKeep[0].timestamp }
+                    });
+                }
+            }
+        } catch (pruneError) {
+            console.error('[ERROR] Failed to prune location history:', pruneError.message);
+        }
+
+        // Emit real-time update via Socket.io
+        const io = req.app.get('io');
+        if (io) {
+            console.log(`[SOCKET] Broadcasting update to room: ${username}`);
+            io.to(username).emit('locationUpdate', {
+                deviceId,
+                latitude,
+                longitude,
+                timestamp: newLocation.timestamp
+            });
+        }
+
         res.status(201).json({ message: 'Location saved successfully' });
     } catch (error) {
+        console.error(`[ERROR] Failed to save location for ${req.params.username}:`, error.message);
         res.status(500).json({ error: error.message });
     }
 });
 
-// GET /api/location/:deviceId - Retrieve location history for a device
+// GET /api/:username/location/:deviceId - Retrieve location history for a device
 router.get('/:deviceId', async (req, res) => {
     try {
+        const username = req.username; // From middleware in server.js
         const { deviceId } = req.params;
-        const history = await Location.find({ deviceId }).sort({ timestamp: -1 }).limit(50);
+        const history = await Location.find({ username, deviceId }).sort({ timestamp: -1 }).limit(50);
         res.status(200).json(history);
     } catch (error) {
         res.status(500).json({ error: error.message });

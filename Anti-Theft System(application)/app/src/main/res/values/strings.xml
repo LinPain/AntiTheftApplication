@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Anti-Theft System</string>
+    <string name="device_admin_description">Cho phép ứng dụng giám sát các lần mở khoá thất bại để bảo vệ thiết bị.</string>
+</resources>
