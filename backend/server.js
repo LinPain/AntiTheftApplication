@@ -8,6 +8,7 @@ require('dotenv').config();
 
 const locationRoutes = require('./routes/locationRoutes');
 const authRoutes = require('./routes/authRoutes');
+const Intruder = require('./models/Intruder');
 
 const app = express();
 const server = http.createServer(app);
@@ -76,6 +77,7 @@ function getUserState(username) {
         userStates[username] = {
             alarm: { active: false, timestamp: 0 },
             lockdown: { active: false, timestamp: 0 },
+            lostMode: { active: false, message: "", phoneNumber: "", timestamp: 0 },
             trackRequest: { active: false, timestamp: 0 }
         };
     }
@@ -95,6 +97,20 @@ app.post('/api/:username/lockdown', authenticateToken, (req, res) => {
     state.lockdown = { active: !!active, timestamp: Date.now() };
     io.to(username).emit('statusUpdate', { lockdown: state.lockdown });
     res.json({ message: `Lockdown ${active ? 'activated' : 'deactivated'} for ${username}`, state: state.lockdown });
+});
+
+app.post('/api/:username/lost-mode', authenticateToken, (req, res) => {
+    const { username } = req.params;
+    const { active, message, phoneNumber } = req.body;
+    const state = getUserState(username);
+    state.lostMode = {
+        active: !!active,
+        message: message || "THIS DEVICE IS LOST",
+        phoneNumber: phoneNumber || "",
+        timestamp: Date.now()
+    };
+    io.to(username).emit('statusUpdate', { lostMode: state.lostMode });
+    res.json({ message: `Lost Mode ${active ? 'activated' : 'deactivated'} for ${username}`, state: state.lostMode });
 });
 
 app.post('/api/:username/track', authenticateToken, (req, res) => {
@@ -117,6 +133,43 @@ app.post('/api/:username/alarm', authenticateToken, (req, res) => {
     state.alarm = { active: !!active, timestamp: Date.now() };
     io.to(username).emit('statusUpdate', { alarm: state.alarm });
     res.json({ message: `Alarm ${active ? 'activated' : 'deactivated'} for ${username}`, state: state.alarm });
+});
+
+// Intruder Detection Routes
+app.post('/api/:username/intruder', authenticateToken, async (req, res) => {
+    try {
+        const { username } = req.params;
+        const { imageBase64, latitude, longitude } = req.body;
+
+        const newIntruder = new Intruder({
+            username,
+            imageBase64,
+            latitude,
+            longitude
+        });
+
+        await newIntruder.save();
+        console.log(`[SECURITY] Intruder alert for ${username}! Photo captured at ${latitude}, ${longitude}`);
+
+        // Notify web client immediately
+        io.to(username).emit('intruderAlert', newIntruder);
+
+        res.status(201).json({ message: 'Intruder log saved' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/:username/intruders', authenticateToken, async (req, res) => {
+    try {
+        const { username } = req.params;
+        const history = await Intruder.find({ username })
+            .sort({ timestamp: -1 })
+            .limit(20);
+        res.json(history);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // Socket.io Connection Logic with Auth

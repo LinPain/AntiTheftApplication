@@ -14,13 +14,16 @@ import com.example.zerotrustauth.network.LocationRequest as NetworkLocationReque
 import com.google.android.gms.location.*
 import com.example.zerotrustauth.data.SecurityPrefs
 import com.example.zerotrustauth.logic.LocationHelper
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.lifecycle.LifecycleService
+import com.example.zerotrustauth.logic.CameraHelper
 import io.socket.client.IO
 import io.socket.client.Socket
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import java.net.URISyntaxException
 
-class LocationService : Service() {
+class LocationService : LifecycleService() {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
@@ -33,12 +36,36 @@ class LocationService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 1234
         private const val CHANNEL_ID = "location_channel"
-        private const val POLLING_INTERVAL = 5000L // 5 seconds fallback
+        private const val POLLING_INTERVAL = 5000L 
         var isRunning = false
+        
+        private var instance: LocationService? = null
+        
+        fun triggerIntruderCapture() {
+            instance?.let { 
+                Log.i("LocationService", "Triggering intruder capture via singleton instance")
+                CameraHelper.captureAndUpload(it, it) 
+            }
+        }
+
+        fun triggerImmediateUpload() {
+            instance?.let {
+                Log.i("LocationService", "Triggering immediate location upload")
+                it.scope.launch {
+                    val token = it.prefs.authToken.first()
+                    val username = it.prefs.username.first()
+                    if (username != null && username != "guest" && token != null) {
+                        val apiService = LocationApiService.create(token)
+                        it.sendImmediateLocation(apiService, username)
+                    }
+                }
+            }
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         prefs = SecurityPrefs(applicationContext)
         locationHelper = LocationHelper(applicationContext)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -68,7 +95,7 @@ class LocationService : Service() {
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
                 for (location in locationResult.locations) {
-                    Log.d("LocationService", "New location: ${location.latitude}, ${location.longitude}")
+                    Log.d("LocationService", "New location: \${location.latitude}, \${location.longitude}")
                     sendLocationToBackend(location.latitude, location.longitude)
                     updateNotification(location.latitude, location.longitude)
                     checkGeofence(location.latitude, location.longitude)
@@ -109,8 +136,7 @@ class LocationService : Service() {
                 val distance = results[0]
 
                 if (distance > radius) {
-                    Log.w("LocationService", "OUTSIDE SAFE ZONE! Distance: $distance m")
-                    // Increase risk score slightly
+                    Log.w("LocationService", "OUTSIDE SAFE ZONE! Distance: \$distance m")
                     prefs.incrementFailedUnlock()
                 }
             }
@@ -123,7 +149,7 @@ class LocationService : Service() {
         
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("📍 Vị trí đã cập nhật")
-            .setContentText("Gửi lúc $time: $lat, $lon")
+            .setContentText("Gửi lúc \$time: \$lat, \$lon")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
@@ -139,11 +165,9 @@ class LocationService : Service() {
                 val username = prefs.username.first() ?: "guest"
                 
                 if (username == "guest" || token.isNullOrBlank()) {
-                    Log.w("LocationService", "Skipping location update: User not logged in or token missing")
                     return@launch
                 }
                 
-                Log.i("LocationService", "Sending location for $username: $lat, $lon")
                 val apiService = LocationApiService.create(token)
 
                 apiService.sendLocation(
@@ -154,18 +178,17 @@ class LocationService : Service() {
                         longitude = lon
                     )
                 )
-                Log.d("LocationService", "Location update sent successfully for $username")
             } catch (e: Exception) {
-                Log.e("LocationService", "Error sending location to backend: ${e.message}", e)
+                Log.e("LocationService", "Error sending location: \${e.message}")
             }
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
         Log.d("LocationService", "Service onStartCommand called")
         initSocketConnection()
         startTrackingPolling()
-        // Ensure service is started as sticky so it's revived by the OS if killed
         return START_STICKY
     }
 
@@ -183,12 +206,10 @@ class LocationService : Service() {
                     socket = IO.socket("https://pardon-resolute-outscore.ngrok-free.dev/", opts)
                     
                     socket?.on(Socket.EVENT_CONNECT) {
-                        Log.i("LocationService", "Socket connected! Joining room: $username")
                         socket?.emit("join", username)
                     }
 
-                    socket?.on("trackRequested") { args ->
-                        Log.i("LocationService", "REAL-TIME Track Request received!")
+                    socket?.on("trackRequested") {
                         scope.launch {
                             val apiService = LocationApiService.create(token)
                             sendImmediateLocation(apiService, username)
@@ -214,7 +235,6 @@ class LocationService : Service() {
                         val apiService = LocationApiService.create(token)
                         val status = apiService.checkFullStatus(username)
 
-                        // Handle Immediate Track Request Fallback
                         status.trackRequest?.let { request ->
                             if (request.active && request.timestamp > lastTrackRequestTimestamp) {
                                 lastTrackRequestTimestamp = request.timestamp
@@ -223,7 +243,7 @@ class LocationService : Service() {
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("LocationService", "Tracking poll error: ${e.message}")
+                    Log.e("LocationService", "Tracking poll error: \${e.message}")
                 }
                 delay(POLLING_INTERVAL)
             }
@@ -231,7 +251,6 @@ class LocationService : Service() {
     }
 
     private fun sendImmediateLocation(apiService: LocationApiService, username: String) {
-        Log.i("LocationService", "Processing immediate track request")
         locationHelper.getCurrentLocation().addOnSuccessListener { location ->
             location?.let {
                 scope.launch {
@@ -244,7 +263,6 @@ class LocationService : Service() {
                                 longitude = it.longitude
                             )
                         )
-                        Log.d("LocationService", "Immediate location sent")
                     } catch (e: Exception) {
                         Log.e("LocationService", "Failed to send immediate location", e)
                     }
@@ -253,7 +271,9 @@ class LocationService : Service() {
         }
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onBind(intent: Intent): IBinder? {
+        return super.onBind(intent)
+    }
 
     override fun onDestroy() {
         super.onDestroy()

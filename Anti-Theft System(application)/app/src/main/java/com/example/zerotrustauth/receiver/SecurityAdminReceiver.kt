@@ -8,6 +8,7 @@ import com.example.zerotrustauth.data.SecurityPrefs
 import com.example.zerotrustauth.logic.RiskManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class SecurityAdminReceiver : DeviceAdminReceiver() {
@@ -19,6 +20,14 @@ class SecurityAdminReceiver : DeviceAdminReceiver() {
         val prefs = SecurityPrefs(context)
         scope.launch {
             prefs.incrementFailedUnlock()
+            val failures = prefs.failedUnlockCount.first()
+            
+            // Trigger intruder capture on 3rd failure
+            if (failures >= 3) {
+                Log.w("SecurityAdmin", "Multiple failures ($failures). Triggering intruder capture.")
+                com.example.zerotrustauth.service.LocationService.triggerIntruderCapture()
+            }
+
             // Evaluate risk and send alert if needed
             RiskManager.checkAndNotify(context)
         }

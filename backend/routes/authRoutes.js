@@ -207,4 +207,38 @@ router.post('/alert-risk', async (req, res) => {
     }
 });
 
+// Alert SIM Swap
+router.post('/alert-sim', async (req, res) => {
+    try {
+        const { username, operatorName } = req.body;
+        const user = await User.findOne({ username });
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: user.email,
+            subject: 'Anti-Theft System - CẢNH BÁO THAY ĐỔI SIM',
+            text: `CẢNH BÁO: Phát hiện thay đổi thẻ SIM trên thiết bị của bạn.
+                   \nNhà mạng mới phát hiện: ${operatorName || 'Không xác định'}.
+                   \nVị trí hiện tại của thiết bị đã được cập nhật trên Dashboard.
+                   \nVui lòng kiểm tra ngay lập tức nếu đây không phải là hành động của bạn.`
+        };
+
+        transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+                console.error('[SIM-ALERT-ERROR] Email failed:', error);
+            } else {
+                console.log(`[SIM-ALERT] Warning email sent to ${user.email} for operator: ${operatorName}`);
+            }
+        });
+
+        res.json({ message: 'SIM alert processed' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 module.exports = router;

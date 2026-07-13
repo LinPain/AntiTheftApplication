@@ -28,6 +28,7 @@ import com.example.zerotrustauth.ui.register.RegisterMFAScreen
 import com.example.zerotrustauth.ui.dashboard.*
 import com.example.zerotrustauth.ui.location.LocationTrackingScreen
 import com.example.zerotrustauth.ui.lockdown.LockdownScreen
+import com.example.zerotrustauth.ui.lockdown.LostModeScreen
 import com.example.zerotrustauth.ui.history.LocationHistoryScreen
 import com.example.zerotrustauth.ui.antitheft.AntiTheftLockScreen
 import com.example.zerotrustauth.service.AlarmService
@@ -151,6 +152,9 @@ fun AppNavigation() {
     
     val failedUnlockCount = securityPrefs.failedUnlockCount.collectAsState(initial = 0).value
     val isRemoteLocked = securityPrefs.isRemoteLockdownActive.collectAsState(initial = false).value
+    val isLostMode = securityPrefs.isLostModeActive.collectAsState(initial = false).value
+    val lostMsg = securityPrefs.lostModeMessage.collectAsState(initial = "THIS DEVICE IS LOST").value
+    val lostPhone = securityPrefs.lostModePhone.collectAsState(initial = "").value
     
     val riskScore = RiskEngine.calculateRiskScore(
         isTrustedDevice = true,
@@ -161,41 +165,46 @@ fun AppNavigation() {
     
     var isManuallyUnlocked by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isRemoteLocked) {
-        android.util.Log.d("MainActivity", "Lockdown status changed: $isRemoteLocked")
-        if (isRemoteLocked) {
+    LaunchedEffect(isRemoteLocked, isLostMode) {
+        android.util.Log.d("MainActivity", "Lockdown: \$isRemoteLocked, LostMode: \$isLostMode")
+        
+        if (isRemoteLocked || isLostMode) {
             // Reset manual unlock state when a new lockdown is detected
             if (isManuallyUnlocked) {
-                android.util.Log.i("MainActivity", "New lockdown detected, resetting manual unlock state.")
+                android.util.Log.i("MainActivity", "New lockdown/lost detected, resetting manual unlock.")
                 isManuallyUnlocked = false
             }
 
             // Aggressive Pinning
             try {
                 (context as? ComponentActivity)?.startLockTask()
-                android.util.Log.i("MainActivity", "Lock Task (Pinning) STARTED")
+                android.util.Log.i("MainActivity", "Lock Task STARTED")
             } catch (e: Exception) {
-                android.util.Log.e("MainActivity", "Failed to start Lock Task: ${e.message}")
+                android.util.Log.e("MainActivity", "Failed to start Lock Task: \${e.message}")
             }
 
-            navController.navigate("antitheft") {
+            val target = if (isLostMode) "lost-mode" else "antitheft"
+            navController.navigate(target) {
                 popUpTo(0) { inclusive = true }
             }
         } else {
-            // Release Pinning when lockdown is deactivated
+            // Release Pinning
             try {
                 (context as? ComponentActivity)?.stopLockTask()
-                android.util.Log.i("MainActivity", "Lock Task (Pinning) STOPPED")
-            } catch (e: Exception) {
-                // Ignore if not in lock task
-            }
+                android.util.Log.i("MainActivity", "Lock Task STOPPED")
+            } catch (e: Exception) { }
         }
     }
 
     NavHost(
         navController = navController,
-        startDestination = if ((securityLevel == SecurityLevel.CRITICAL || isRemoteLocked) && !isManuallyUnlocked) "antitheft" else "login"
+        startDestination = if ((securityLevel == SecurityLevel.CRITICAL || isRemoteLocked) && !isManuallyUnlocked) "antitheft" 
+                           else if (isLostMode) "lost-mode"
+                           else "login"
     ) {
+        composable("lost-mode") {
+            LostModeScreen(message = lostMsg, phoneNumber = lostPhone)
+        }
         composable("antitheft") {
             AntiTheftLockScreen(
                 onUnlockSuccess = { 

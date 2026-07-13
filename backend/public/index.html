@@ -81,10 +81,9 @@
         <p>Last Update: <span id="last-update">-</span></p>
         <hr style="border: 0.5px solid #eee; margin: 15px 0;">
 
-        <button id="trigger-alarm" style="width: 100%; padding: 12px; background: #EF4444; color: white; margin-bottom: 8px;">🔔 TRIGGER ALARM</button>
-        <button id="stop-alarm" style="width: 100%; padding: 12px; background: #10B981; color: white; margin-bottom: 8px; display: none;">🔕 STOP ALARM</button>
-        <button id="trigger-lockdown" style="width: 100%; padding: 12px; background: #000; color: white;">🔒 FORCE LOCKDOWN</button>
-        <button id="stop-lockdown" style="width: 100%; padding: 12px; background: #10B981; color: white; display: none;">🔓 RELEASE LOCKDOWN</button>
+        <button id="trigger-lost" style="width: 100%; padding: 12px; background: #E53935; color: white; margin-top: 8px;">🚩 REPORT DEVICE LOST</button>
+        <button id="stop-lost" style="width: 100%; padding: 12px; background: #10B981; color: white; margin-top: 8px; display: none;">🏳️ STOP LOST MODE</button>
+
         <button id="track-now" style="width: 100%; padding: 12px; background: #3B82F6; color: white; margin-top: 10px;">📍 TRACK NOW</button>
 
         <div style="margin-top: 15px; display: flex; align-items: center; justify-content: space-between; font-size: 0.85em;">
@@ -97,6 +96,12 @@
         <div id="log-container" style="margin-top: 15px; font-size: 0.75em; color: #666; max-height: 100px; overflow-y: auto; border-top: 1px solid #eee; padding-top: 5px;">
             <div style="font-weight: bold; margin-bottom: 2px;">System Logs:</div>
             <div id="logs"></div>
+        </div>
+
+        <hr style="border: 0.5px solid #eee; margin: 15px 0;">
+        <h3 style="margin-top: 0; font-size: 1em;">👤 Intruder Logs</h3>
+        <div id="intruder-logs" style="max-height: 250px; overflow-y: auto;">
+            <p style="font-size: 0.8em; color: #999; text-align: center;">No intruders detected</p>
         </div>
     </div>
     <div id="map"></div>
@@ -255,12 +260,14 @@
 
             initSocket();
             fetchLocation();
+            fetchIntruders();
             updateStatusUI();
             setInterval(updateStatusUI, 10000); // Periodic status sync
         }
 
         function initSocket() {
             console.log('Attempting to connect to socket server...');
+            // ... (rest of socket init)
             // Support both WebSocket and Polling for better ngrok compatibility
             // Adding extraHeaders for ngrok bypass if possible (only works for polling transport)
             socket = io({
@@ -300,6 +307,14 @@
                 if (data.deviceId === deviceId) updateMarker(data.latitude, data.longitude, data.timestamp);
             });
 
+            socket.on('intruderAlert', (data) => {
+                console.warn('INTRUDER ALERT RECEIVED:', data);
+                addLog('⚠️ INTRUDER DETECTED! Photo uploaded.', 'error');
+                fetchIntruders(); // Refresh gallery
+                // Jump to intruder location on map
+                updateMarker(data.latitude, data.longitude, data.timestamp);
+            });
+
             socket.on('statusUpdate', () => {
                 console.log('Status update received via socket');
                 updateStatusUI();
@@ -319,7 +334,7 @@
 
         async function fetchLocation() {
             try {
-                const response = await secureFetch(`/api/${activeUsername}/location/${deviceId}`);
+                const response = await secureFetch(`/api/\${activeUsername}/location/\${deviceId}`);
                 const data = await response.json();
                 if (data && data.length > 0) {
                     addLog('Historical data loaded');
@@ -333,14 +348,52 @@
             }
         }
 
+        async function fetchIntruders() {
+            try {
+                const response = await secureFetch(`/api/\${activeUsername}/intruders`);
+                const intruders = await response.json();
+                const container = document.getElementById('intruder-logs');
+
+                if (intruders.length === 0) {
+                    container.innerHTML = '<p style="font-size: 0.8em; color: #999; text-align: center;">No intruders detected</p>';
+                    return;
+                }
+
+                container.innerHTML = '';
+                intruders.forEach(intruder => {
+                    const div = document.createElement('div');
+                    div.className = 'intruder-item';
+                    div.style = 'margin-bottom: 12px; border: 1px solid #eee; border-radius: 8px; overflow: hidden; background: #fafafa;';
+
+                    const time = new Date(intruder.timestamp).toLocaleString();
+
+                    div.innerHTML = `
+                        <img src="\${intruder.imageBase64}" style="width: 100%; height: 180px; object-fit: cover;">
+                        <div style="padding: 10px;">
+                            <div style="font-size: 0.85em; font-weight: bold; color: #333;">\${time}</div>
+                            <div style="font-size: 0.75em; color: #666; margin-top: 4px;">📍 \${intruder.latitude.toFixed(4)}, \${intruder.longitude.toFixed(4)}</div>
+                            <button onclick="updateMarker(\${intruder.latitude}, \${intruder.longitude}, '\${intruder.timestamp}')"
+                                    style="width: 100%; margin-top: 8px; padding: 6px; background: #3B82F6; color: white; font-size: 0.75em;">
+                                VIEW ON MAP
+                            </button>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            } catch (e) { console.error('Failed to fetch intruders:', e); }
+        }
+
         async function updateStatusUI() {
             try {
                 const response = await secureFetch(`/api/${activeUsername}/status`);
                 const status = await response.json();
                 document.getElementById('trigger-alarm').style.display = status.alarm.active ? 'none' : 'block';
                 document.getElementById('stop-alarm').style.display = status.alarm.active ? 'block' : 'none';
-                document.getElementById('trigger-lockdown').style.display = status.lockdown.active ? 'none' : 'block';
-                document.getElementById('stop-lockdown').style.display = status.lockdown.active ? 'block' : 'none';
+
+                // Lost Mode UI
+                const isLost = status.lostMode && status.lostMode.active;
+                document.getElementById('trigger-lost').style.display = isLost ? 'none' : 'block';
+                document.getElementById('stop-lost').style.display = isLost ? 'block' : 'none';
             } catch (e) { console.error(e); }
         }
 
@@ -368,33 +421,45 @@
 
         document.getElementById('trigger-alarm').addEventListener('click', () => toggleCommand('alarm', true));
         document.getElementById('stop-alarm').addEventListener('click', () => toggleCommand('alarm', false));
-        document.getElementById('trigger-lockdown').addEventListener('click', () => toggleCommand('lockdown', true));
-        document.getElementById('stop-lockdown').addEventListener('click', () => toggleCommand('lockdown', false));
+
+        document.getElementById('trigger-lost').addEventListener('click', () => {
+            const phone = prompt("Nhập số điện thoại liên hệ:", "0123456789");
+            const msg = prompt("Nhập lời nhắn cho người nhặt được:", "THIS DEVICE IS LOST. Reward Available.");
+            if (phone !== null) toggleCommand('lost-mode', true, { phoneNumber: phone, message: msg });
+        });
+        document.getElementById('stop-lost').addEventListener('click', () => toggleCommand('lost-mode', false));
+
         document.getElementById('track-now').addEventListener('click', () => toggleCommand('track', true));
 
-        async function toggleCommand(type, active) {
-            const btn = type === 'track' ? document.getElementById('track-now') : null;
+        async function toggleCommand(type, active, extraData = {}) {
+            const btnId = type === 'track' ? 'track-now' :
+                          type === 'lost-mode' ? (active ? 'trigger-lost' : 'stop-lost') :
+                          type === 'alarm' ? (active ? 'trigger-alarm' : 'stop-alarm') : null;
+            const btn = btnId ? document.getElementById(btnId) : null;
             const originalText = btn ? btn.innerText : '';
 
             try {
                 if (btn) {
                     btn.disabled = true;
                     btn.innerText = "📍 REQUESTING...";
-                    btn.style.background = "#94A3B8";
+                    if (type === 'track') btn.style.background = "#94A3B8";
                 }
 
                 await secureFetch(`/api/${activeUsername}/${type}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: type !== 'track' ? JSON.stringify({ active }) : undefined
+                    body: JSON.stringify({ active, ...extraData })
                 });
 
-                if (btn) {
+                if (btn && type === 'track') {
                     setTimeout(() => {
                         btn.disabled = false;
                         btn.innerText = originalText;
                         btn.style.background = "#3B82F6";
                     }, 2000);
+                } else if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = originalText;
                 }
 
                 updateStatusUI();
@@ -403,7 +468,7 @@
                 if (btn) {
                     btn.disabled = false;
                     btn.innerText = "❌ FAILED";
-                    setTimeout(() => { btn.innerText = originalText; btn.style.background = "#3B82F6"; }, 2000);
+                    setTimeout(() => { btn.innerText = originalText; if(type==='track') btn.style.background = "#3B82F6"; }, 2000);
                 }
             }
         }

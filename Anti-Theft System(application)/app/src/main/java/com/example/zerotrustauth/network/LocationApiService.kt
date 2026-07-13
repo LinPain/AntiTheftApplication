@@ -29,9 +29,17 @@ data class AlarmStatus(
     val timestamp: Long
 )
 
+data class LostModeState(
+    val active: Boolean,
+    val message: String? = null,
+    val phoneNumber: String? = null,
+    val timestamp: Long = 0
+)
+
 data class FullStatus(
     val alarm: AlarmStatus,
     val lockdown: AlarmStatus,
+    val lostMode: LostModeState? = null,
     val trackRequest: AlarmStatus? = null
 )
 
@@ -40,6 +48,8 @@ data class RegisterRequest(val username: String, val email: String, val password
 data class LoginRequest(val username: String, val password: String, val riskScore: Int = 0)
 data class VerifyOtpRequest(val username: String, val otp: String)
 data class RiskAlertRequest(val username: String, val riskScore: Int)
+data class SimAlertRequest(val username: String, val operatorName: String)
+data class IntruderRequest(val imageBase64: String, val latitude: Double, val longitude: Double)
 data class AuthResponse(
     val message: String,
     val token: String? = null,
@@ -66,6 +76,17 @@ interface LocationApiService {
     @POST("api/auth/alert-risk")
     suspend fun notifyRiskAlert(
         @Body request: RiskAlertRequest
+    ): AuthResponse
+
+    @POST("api/auth/alert-sim")
+    suspend fun notifySimAlert(
+        @Body request: SimAlertRequest
+    ): AuthResponse
+
+    @POST("api/{username}/intruder")
+    suspend fun uploadIntruderLog(
+        @Path("username") username: String,
+        @Body request: IntruderRequest
     ): AuthResponse
 
     // Location APIs - Namespaced by username

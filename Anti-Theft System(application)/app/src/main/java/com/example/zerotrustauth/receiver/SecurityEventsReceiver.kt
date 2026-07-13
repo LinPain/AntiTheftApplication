@@ -55,11 +55,15 @@ class SecurityEventsReceiver : BroadcastReceiver() {
             val lastSimId = prefs.lastSimId.first()
             if (lastSimId != null && lastSimId != currentSimId && currentSimId != "unknown" && currentSimId != "restricted") {
                 Log.w("SecurityReceiver", "SIM CARD CHANGED! Potential risk detected.")
+                
+                // Trigger Comprehensive SIM Alert
+                com.example.zerotrustauth.logic.SimManager.notifySimChange(context, currentSimId)
+
                 // Automatically increase risk score
-                for (i in 1..4) { // Simulate multiple failures to push risk to critical
+                for (i in 1..4) { 
                     prefs.incrementFailedUnlock()
                 }
-                // Trigger immediate notification
+                // Trigger immediate risk evaluation
                 com.example.zerotrustauth.logic.RiskManager.checkAndNotify(context)
             }
             prefs.saveSimId(currentSimId)

@@ -74,9 +74,18 @@ class AlarmService : Service() {
                         socket?.emit("join", username)
                     }
 
-                    socket?.on("statusUpdate") {
+                    socket?.on("statusUpdate") { args ->
                         Log.d("AlarmService", "Status update event received via socket")
-                        // We could trigger an immediate poll here if we wanted
+                        // Immediate fetch on status update to catch Lost Mode or Lockdown changes
+                        scope.launch {
+                            val apiService = LocationApiService.create(token)
+                            val status = apiService.checkFullStatus(username)
+                            
+                            prefs.setRemoteLockdown(status.lockdown.active)
+                            status.lostMode?.let { lost ->
+                                prefs.setLostMode(lost.active, lost.message, lost.phoneNumber)
+                            }
+                        }
                     }
 
                     socket?.connect()
@@ -114,6 +123,11 @@ class AlarmService : Service() {
                             showLockdownNotification()
                         }
                         prefs.setRemoteLockdown(status.lockdown.active)
+
+                        // Handle Lost Mode Status Update
+                        status.lostMode?.let { lost ->
+                            prefs.setLostMode(lost.active, lost.message, lost.phoneNumber)
+                        }
                     } else {
                         Log.d("AlarmService", "Skipping poll: No user logged in")
                     }

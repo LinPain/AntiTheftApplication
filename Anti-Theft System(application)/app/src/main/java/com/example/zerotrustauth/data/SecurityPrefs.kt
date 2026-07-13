@@ -23,6 +23,9 @@ class SecurityPrefs(private val context: Context) {
         val SAFE_ZONE_LAT = doublePreferencesKey("safe_zone_lat")
         val SAFE_ZONE_LON = doublePreferencesKey("safe_zone_lon")
         val SAFE_ZONE_RADIUS = floatPreferencesKey("safe_zone_radius")
+        val IS_LOST_MODE_ACTIVE = booleanPreferencesKey("is_lost_mode_active")
+        val LOST_MODE_MESSAGE = stringPreferencesKey("lost_mode_message")
+        val LOST_MODE_PHONE = stringPreferencesKey("lost_mode_phone")
     }
 
     val lastSimId: Flow<String?> = context.dataStore.data.map { it[LAST_SIM_ID] }
@@ -36,6 +39,17 @@ class SecurityPrefs(private val context: Context) {
     val safeZoneLat: Flow<Double?> = context.dataStore.data.map { it[SAFE_ZONE_LAT] }
     val safeZoneLon: Flow<Double?> = context.dataStore.data.map { it[SAFE_ZONE_LON] }
     val safeZoneRadius: Flow<Float> = context.dataStore.data.map { it[SAFE_ZONE_RADIUS] ?: 100f } // Default 100m
+    val isLostModeActive: Flow<Boolean> = context.dataStore.data.map { it[IS_LOST_MODE_ACTIVE] ?: false }
+    val lostModeMessage: Flow<String> = context.dataStore.data.map { it[LOST_MODE_MESSAGE] ?: "THIS DEVICE IS LOST" }
+    val lostModePhone: Flow<String> = context.dataStore.data.map { it[LOST_MODE_PHONE] ?: "" }
+
+    suspend fun setLostMode(active: Boolean, message: String? = null, phone: String? = null) {
+        context.dataStore.edit {
+            it[IS_LOST_MODE_ACTIVE] = active
+            if (message != null) it[LOST_MODE_MESSAGE] = message
+            if (phone != null) it[LOST_MODE_PHONE] = phone
+        }
+    }
 
     suspend fun setSafeZone(lat: Double, lon: Double, radius: Float = 100f) {
         context.dataStore.edit {
