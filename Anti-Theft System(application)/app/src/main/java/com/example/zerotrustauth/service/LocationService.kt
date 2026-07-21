@@ -8,21 +8,24 @@ import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import com.example.zerotrustauth.network.LocationApiService
 import com.example.zerotrustauth.network.LocationRequest as NetworkLocationRequest
 import com.google.android.gms.location.*
 import com.example.zerotrustauth.data.SecurityPrefs
 import com.example.zerotrustauth.logic.LocationHelper
-import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.lifecycle.LifecycleService
 import com.example.zerotrustauth.logic.CameraHelper
-import io.socket.client.IO
-import io.socket.client.Socket
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
-import java.net.URISyntaxException
 
+/**
+ * Optimized Location Service
+ * Purely handles GPS capture and geofencing. 
+ */
 class LocationService : LifecycleService() {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
@@ -30,27 +33,39 @@ class LocationService : LifecycleService() {
     private val scope = CoroutineScope(Dispatchers.IO + Job())
     private lateinit var prefs: SecurityPrefs
     private lateinit var locationHelper: LocationHelper
-    private var lastTrackRequestTimestamp = 0L
-    private var socket: Socket? = null
+    private var isTrackingUpdatesActive = false
 
     companion object {
         private const val NOTIFICATION_ID = 1234
         private const val CHANNEL_ID = "location_channel"
-        private const val POLLING_INTERVAL = 5000L 
         var isRunning = false
         
         private var instance: LocationService? = null
         
         fun triggerIntruderCapture() {
             instance?.let { 
-                Log.i("LocationService", "Triggering intruder capture via singleton instance")
+                Log.i("LocationService", "Triggering intruder capture")
                 CameraHelper.captureAndUpload(it, it) 
             }
         }
 
-        fun triggerImmediateUpload() {
+        /**
+         * Wake up tracking and upload location immediately
+         */
+        fun triggerImmediateUpload(context: android.content.Context) {
+            // Force start service if not running
+            if (!isRunning) {
+                Log.i("LocationService", "Waking up service for remote track request")
+                val intent = Intent(context, LocationService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            }
+
             instance?.let {
-                Log.i("LocationService", "Triggering immediate location upload")
+                Log.i("LocationService", "Triggering immediate location pulse")
                 it.scope.launch {
                     val token = it.prefs.authToken.first()
                     val username = it.prefs.username.first()
@@ -70,8 +85,15 @@ class LocationService : LifecycleService() {
         locationHelper = LocationHelper(applicationContext)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         createNotificationChannel()
-        startLocationUpdates()
         isRunning = true
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        if (!isTrackingUpdatesActive) {
+            startLocationUpdates()
+        }
+        return START_STICKY
     }
 
     private fun createNotificationChannel() {
@@ -88,6 +110,21 @@ class LocationService : LifecycleService() {
 
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            Log.e("LocationService", "Cannot start foreground service: Location permission not granted")
+            stopSelf()
+            return
+        }
+
+        // On Android 14+, we must also check for FOREGROUND_SERVICE_LOCATION
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.FOREGROUND_SERVICE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                Log.e("LocationService", "Cannot start foreground service: FOREGROUND_SERVICE_LOCATION permission not granted")
+                stopSelf()
+                return
+            }
+        }
+
         val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000L).apply {
             setMinUpdateIntervalMillis(2000L)
         }.build()
@@ -95,7 +132,6 @@ class LocationService : LifecycleService() {
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
                 for (location in locationResult.locations) {
-                    Log.d("LocationService", "New location: \${location.latitude}, \${location.longitude}")
                     sendLocationToBackend(location.latitude, location.longitude)
                     updateNotification(location.latitude, location.longitude)
                     checkGeofence(location.latitude, location.longitude)
@@ -122,6 +158,7 @@ class LocationService : LifecycleService() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        isTrackingUpdatesActive = true
     }
 
     private fun checkGeofence(lat: Double, lon: Double) {
@@ -133,11 +170,13 @@ class LocationService : LifecycleService() {
             if (safeLat != null && safeLon != null) {
                 val results = FloatArray(1)
                 android.location.Location.distanceBetween(lat, lon, safeLat, safeLon, results)
-                val distance = results[0]
-
-                if (distance > radius) {
-                    Log.w("LocationService", "OUTSIDE SAFE ZONE! Distance: \$distance m")
-                    prefs.incrementFailedUnlock()
+                val isOutside = results[0] > radius
+                
+                // Set the real geofence flag instead of incrementing failed PINs
+                prefs.setOutsideSafeZone(isOutside)
+                
+                if (isOutside) {
+                    Log.w("LocationService", "OUTSIDE SAFE ZONE! Dist: ${results[0]}m")
                 }
             }
         }
@@ -146,15 +185,13 @@ class LocationService : LifecycleService() {
     private fun updateNotification(lat: Double, lon: Double) {
         val notificationManager = getSystemService(NotificationManager::class.java)
         val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-        
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("📍 Vị trí đã cập nhật")
-            .setContentText("Gửi lúc \$time: \$lat, \$lon")
+            .setContentText("Gửi lúc $time: $lat, $lon")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()
-        
         notificationManager.notify(NOTIFICATION_ID, notification)
     }
 
@@ -162,90 +199,16 @@ class LocationService : LifecycleService() {
         scope.launch {
             try {
                 val token = prefs.authToken.first()
-                val username = prefs.username.first() ?: "guest"
+                val username = prefs.username.first()
+                if (username == null || username == "guest" || token.isNullOrBlank()) return@launch
                 
-                if (username == "guest" || token.isNullOrBlank()) {
-                    return@launch
-                }
-                
-                val apiService = LocationApiService.create(token)
-
-                apiService.sendLocation(
+                LocationApiService.create(token).sendLocation(
                     username = username,
-                    location = NetworkLocationRequest(
-                        deviceId = "android_device_1",
-                        latitude = lat,
-                        longitude = lon
-                    )
+                    location = NetworkLocationRequest(locationHelper.getDeviceId(), lat, lon)
                 )
+                Log.d("LocationService", "GPS Upload success: $lat, $lon")
             } catch (e: Exception) {
-                Log.e("LocationService", "Error sending location: \${e.message}")
-            }
-        }
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        super.onStartCommand(intent, flags, startId)
-        Log.d("LocationService", "Service onStartCommand called")
-        initSocketConnection()
-        startTrackingPolling()
-        return START_STICKY
-    }
-
-    private fun initSocketConnection() {
-        scope.launch {
-            val username = prefs.username.first()
-            val token = prefs.authToken.first()
-
-            if (username != null && username != "guest" && token != null) {
-                try {
-                    val opts = IO.Options()
-                    opts.auth = mapOf("token" to token)
-                    opts.extraHeaders = mapOf("ngrok-skip-browser-warning" to listOf("true"))
-                    
-                    socket = IO.socket("https://pardon-resolute-outscore.ngrok-free.dev/", opts)
-                    
-                    socket?.on(Socket.EVENT_CONNECT) {
-                        socket?.emit("join", username)
-                    }
-
-                    socket?.on("trackRequested") {
-                        scope.launch {
-                            val apiService = LocationApiService.create(token)
-                            sendImmediateLocation(apiService, username)
-                        }
-                    }
-
-                    socket?.connect()
-                } catch (e: URISyntaxException) {
-                    Log.e("LocationService", "Socket URI error", e)
-                }
-            }
-        }
-    }
-
-    private fun startTrackingPolling() {
-        scope.launch {
-            while (isActive) {
-                try {
-                    val username = prefs.username.first()
-                    val token = prefs.authToken.first()
-
-                    if (username != null && username != "guest") {
-                        val apiService = LocationApiService.create(token)
-                        val status = apiService.checkFullStatus(username)
-
-                        status.trackRequest?.let { request ->
-                            if (request.active && request.timestamp > lastTrackRequestTimestamp) {
-                                lastTrackRequestTimestamp = request.timestamp
-                                sendImmediateLocation(apiService, username)
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e("LocationService", "Tracking poll error: \${e.message}")
-                }
-                delay(POLLING_INTERVAL)
+                Log.e("LocationService", "GPS Upload failed: ${e.message}")
             }
         }
     }
@@ -257,30 +220,25 @@ class LocationService : LifecycleService() {
                     try {
                         apiService.sendLocation(
                             username = username,
-                            location = NetworkLocationRequest(
-                                deviceId = "android_device_1",
-                                latitude = it.latitude,
-                                longitude = it.longitude
-                            )
+                            location = NetworkLocationRequest(locationHelper.getDeviceId(), it.latitude, it.longitude)
                         )
+                        Log.d("LocationService", "Immediate GPS pulse success")
                     } catch (e: Exception) {
-                        Log.e("LocationService", "Failed to send immediate location", e)
+                        Log.e("LocationService", "Immediate pulse failed")
                     }
                 }
             }
         }
     }
 
-    override fun onBind(intent: Intent): IBinder? {
-        return super.onBind(intent)
-    }
+    override fun onBind(intent: Intent): IBinder? = super.onBind(intent)
 
     override fun onDestroy() {
         super.onDestroy()
         fusedLocationClient.removeLocationUpdates(locationCallback)
-        socket?.disconnect()
-        socket?.off()
         scope.cancel()
         isRunning = false
+        isTrackingUpdatesActive = false
+        instance = null
     }
 }

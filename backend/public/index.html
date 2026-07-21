@@ -1,479 +1,350 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Anti-Theft System - Real-time Tracking</title>
+    <title>Anti-Theft System - Dashboard</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; font-family: sans-serif; background: #f0f2f5; }
-        #map { height: 100vh; width: 100%; }
+        body { margin: 0; padding: 0; font-family: -apple-system, system-ui, sans-serif; background: #f0f2f5; overflow: hidden; }
+        #map { height: 100vh; width: 100%; z-index: 1; }
         #info {
-            position: absolute; top: 10px; right: 10px; z-index: 1000;
-            background: white; padding: 20px; border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 250px;
+            position: absolute; top: 15px; right: 15px; z-index: 1000;
+            background: white; padding: 20px; border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15); width: 280px;
         }
         .status-online { color: #10B981; font-weight: bold; }
-        .user-tag { background: #E2E8F0; padding: 4px 8px; border-radius: 4px; font-size: 0.9em; font-weight: bold; }
+        .user-tag { background: #E2E8F0; padding: 4px 8px; border-radius: 6px; font-size: 0.9em; font-weight: bold; }
         button {
-            transition: all 0.2s; border: none; border-radius: 6px; cursor: pointer;
+            transition: all 0.2s; border: none; border-radius: 8px; cursor: pointer;
             font-weight: bold; display: flex; align-items: center; justify-content: center;
         }
-        button:active { transform: scale(0.98); }
-        button:disabled { background: #ccc !important; cursor: not-allowed; }
-        .login-overlay {
+        button:active { transform: scale(0.97); }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        .overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85); z-index: 2000;
+            background: rgba(0,0,0,0.8); z-index: 2000;
             display: flex; align-items: center; justify-content: center;
         }
-        .login-box {
-            background: white; padding: 35px; border-radius: 20px;
-            text-align: center; width: 320px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        .box {
+            background: white; padding: 40px; border-radius: 25px;
+            text-align: center; width: 340px; box-shadow: 0 10px 40px rgba(0,0,0,0.4);
         }
         input {
-            width: 100%; padding: 12px; margin: 10px 0;
-            border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box;
-            font-size: 16px;
+            width: 100%; padding: 14px; margin: 10px 0;
+            border: 1px solid #e2e8f0; border-radius: 10px; box-sizing: border-box;
+            font-size: 16px; outline: none;
         }
-        .error-msg { color: #EF4444; font-size: 0.85em; margin-top: 5px; min-height: 1.2em; }
+        input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+        .error-msg { color: #EF4444; font-size: 0.85em; min-height: 1.5em; margin: 5px 0; }
+        .loading { font-size: 0.85em; color: #3b82f6; margin-bottom: 10px; display: none; }
+        .device-item {
+            padding: 10px; border-radius: 8px; background: #f8fafc;
+            margin-bottom: 8px; border: 1px solid #e2e8f0; font-size: 0.85em;
+        }
+        .device-item:hover { background: #f1f5f9; }
+        .device-name { font-weight: bold; color: #1e293b; display: block; }
+        .device-time { font-size: 0.8em; color: #64748b; }
+        .btn-focus {
+            margin-top: 5px; padding: 4px 8px; font-size: 0.75em;
+            background: #3b82f6; color: white; border-radius: 4px;
+            border: none; cursor: pointer;
+        }
     </style>
 </head>
 <body>
-    <div id="login-overlay" class="login-overlay">
-        <div class="login-box" id="step-1">
+    <div id="login-overlay" class="overlay">
+        <!-- STEP 1: LOGIN -->
+        <div class="box" id="step-login">
             <h2 style="margin-bottom: 5px;">Anti-Theft System</h2>
-            <p style="color: #666; font-size: 0.9em;">Đăng nhập để giám sát thiết bị</p>
-            <input type="text" id="username-input" placeholder="Username hoặc Email">
-            <input type="password" id="password-input" placeholder="Mật khẩu">
+            <p style="color: #64748b; font-size: 0.9em; margin-bottom: 25px;">Đăng nhập để giám sát thiết bị</p>
+            <input type="text" id="login-user" placeholder="Username hoặc Email">
+            <input type="password" id="login-pass" placeholder="Mật khẩu">
             <div id="login-error" class="error-msg"></div>
-            <button id="login-btn" style="width: 100%; padding: 14px; background: #3B82F6; color: white; margin-top: 15px;">ĐĂNG NHẬP</button>
-            <button id="show-register-btn" style="width: 100%; padding: 8px; background: transparent; color: #3B82F6; margin-top: 10px; font-size: 0.85em;">Chưa có tài khoản? Đăng ký</button>
+            <div id="login-loading" class="loading">⏳ Đang xác thực...</div>
+            <button id="btn-login" style="width: 100%; padding: 15px; background: #3B82F6; color: white;">ĐĂNG NHẬP</button>
+            <div style="margin-top: 20px; font-size: 0.85em;">
+                <span id="go-reg" style="color: #3b82f6; cursor: pointer;">Đăng ký</span> |
+                <span id="go-forgot" style="color: #64748b; cursor: pointer;">Quên mật khẩu?</span>
+            </div>
         </div>
 
-        <div class="login-box" id="register-step" style="display: none;">
-            <h2 style="margin-bottom: 5px;">Tạo tài khoản</h2>
-            <p style="color: #666; font-size: 0.9em;">Tham gia hệ thống Zero Trust</p>
-            <input type="text" id="reg-username" placeholder="Tên đăng nhập">
-            <input type="text" id="reg-email" placeholder="Email">
-            <input type="password" id="reg-password" placeholder="Mật khẩu">
-            <div id="register-error" class="error-msg"></div>
-            <button id="register-btn" style="width: 100%; padding: 14px; background: #3B82F6; color: white; margin-top: 15px;">ĐĂNG KÝ</button>
-            <button id="back-to-login-btn" style="width: 100%; padding: 8px; background: transparent; color: #666; margin-top: 10px; font-size: 0.8em;">Đã có tài khoản? Đăng nhập</button>
-        </div>
-
-        <div class="login-box" id="step-2" style="display: none;">
-            <h2 style="margin-bottom: 5px;">Xác thực OTP</h2>
-            <p style="color: #666; font-size: 0.9em;">Mã đã được gửi đến email của bạn</p>
-            <input type="text" id="otp-input" placeholder="Nhập 6 số OTP" maxlength="6" style="text-align: center; letter-spacing: 5px; font-weight: bold;">
+        <!-- STEP 2: OTP -->
+        <div class="box" id="step-otp" style="display: none;">
+            <h2 id="otp-title">Xác thực OTP</h2>
+            <p id="otp-subtitle" style="color: #64748b; font-size: 0.9em;">Mã đã được gửi đến email</p>
+            <input type="text" id="otp-code" placeholder="Nhập 6 số mã OTP" maxlength="6" style="text-align: center; letter-spacing: 5px; font-weight: bold;">
             <div id="otp-error" class="error-msg"></div>
-            <button id="verify-btn" style="width: 100%; padding: 14px; background: #10B981; color: white; margin-top: 15px;">XÁC MINH</button>
-            <button id="back-to-login" style="width: 100%; padding: 8px; background: transparent; color: #666; margin-top: 10px; font-size: 0.8em;">Quay lại</button>
+            <button id="btn-verify" style="width: 100%; padding: 15px; background: #10B981; color: white;">XÁC MINH</button>
+            <div style="margin-top: 15px;">
+                <span id="btn-resend" style="color: #3b82f6; font-size: 0.85em; cursor: pointer;">Gửi lại mã</span>
+                <div id="timer" style="font-size: 0.8em; color: #94a3b8; display: none;">Gửi lại sau <span id="sec">30</span>s</div>
+            </div>
+            <button id="back-to-login" style="margin-top: 15px; background: transparent; color: #64748b; font-size: 0.85em;">Quay lại</button>
+        </div>
+
+        <!-- STEP 3: REGISTER -->
+        <div class="box" id="step-reg" style="display: none;">
+            <h2>Tạo tài khoản</h2>
+            <input type="text" id="reg-user" placeholder="Tên đăng nhập">
+            <input type="text" id="reg-email" placeholder="Email">
+            <input type="password" id="reg-pass" placeholder="Mật khẩu">
+            <div id="reg-error" class="error-msg"></div>
+            <div id="reg-loading" class="loading">⏳ Đang gửi yêu cầu...</div>
+            <button id="btn-reg" style="width: 100%; padding: 15px; background: #3B82F6; color: white;">ĐĂNG KÝ</button>
+            <button id="reg-to-login" style="margin-top: 15px; background: transparent; color: #64748b; font-size: 0.85em;">Đã có tài khoản? Đăng nhập</button>
         </div>
     </div>
 
+    <!-- DASHBOARD INFO -->
     <div id="info" style="display: none;">
-        <h3 style="margin-top: 0;">🛡️ Monitor</h3>
-        <p>User: <span id="display-username" class="user-tag">-</span></p>
-        <p>Device: <span id="device-id" style="font-family: monospace;">android_device_1</span></p>
-        <p>Status: <span id="status" class="status-online">LIVE (Real-time)</span></p>
-        <p>Last Update: <span id="last-update">-</span></p>
-        <hr style="border: 0.5px solid #eee; margin: 15px 0;">
+        <h3 style="margin-top: 0; display: flex; align-items: center; gap: 8px;">🛡️ Dashboard</h3>
+        <p style="margin: 8px 0;">User: <span id="view-user" class="user-tag">-</span></p>
+        <p style="margin: 8px 0;">Status: <span id="view-status" class="status-online">CONNECTED</span></p>
 
-        <button id="trigger-lost" style="width: 100%; padding: 12px; background: #E53935; color: white; margin-top: 8px;">🚩 REPORT DEVICE LOST</button>
-        <button id="stop-lost" style="width: 100%; padding: 12px; background: #10B981; color: white; margin-top: 8px; display: none;">🏳️ STOP LOST MODE</button>
-
-        <button id="track-now" style="width: 100%; padding: 12px; background: #3B82F6; color: white; margin-top: 10px;">📍 TRACK NOW</button>
-
-        <div style="margin-top: 15px; display: flex; align-items: center; justify-content: space-between; font-size: 0.85em;">
-            <span>Follow Device</span>
-            <input type="checkbox" id="follow-toggle" checked style="width: auto; margin: 0;">
+        <div style="margin: 15px 0;">
+            <label for="device-selector" style="font-size: 0.8em; color: #64748b; font-weight: bold; display: block; margin-bottom: 5px;">📍 THEO DÕI THIẾT BỊ:</label>
+            <select id="device-selector" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; outline: none; cursor: pointer;">
+                <option value="all">Tất cả thiết bị</option>
+            </select>
         </div>
 
-        <button id="logout-btn" style="width: 100%; padding: 8px; background: #94A3B8; color: white; margin-top: 15px; font-size: 0.8em;">LOGOUT</button>
+        <hr style="border: 0.5px solid #f1f5f9; margin: 15px 0;">
 
-        <div id="log-container" style="margin-top: 15px; font-size: 0.75em; color: #666; max-height: 100px; overflow-y: auto; border-top: 1px solid #eee; padding-top: 5px;">
-            <div style="font-weight: bold; margin-bottom: 2px;">System Logs:</div>
-            <div id="logs"></div>
+        <button id="cmd-alarm" style="width: 100%; padding: 12px; background: #EF4444; color: white; margin-bottom: 8px;">🔔 TRIGGER ALARM</button>
+        <button id="cmd-stop-alarm" style="width: 100%; padding: 12px; background: #10B981; color: white; margin-bottom: 8px; display: none;">🔕 STOP ALARM</button>
+
+        <button id="cmd-lost" style="width: 100%; padding: 12px; background: #E53935; color: white;">🚩 REPORT LOST</button>
+        <button id="cmd-stop-lost" style="width: 100%; padding: 12px; background: #10B981; color: white; display: none;">🏳️ STOP LOST MODE</button>
+
+        <button id="cmd-track" style="width: 100%; padding: 12px; background: #3B82F6; color: white; margin-top: 15px;">📍 TRACK NOW</button>
+
+        <div style="margin-top: 20px;">
+            <label style="font-size: 0.8em; color: #64748b; font-weight: bold; display: block; margin-bottom: 10px;">📱 DANH SÁCH THIẾT BỊ:</label>
+            <div id="device-list"></div>
         </div>
 
-        <hr style="border: 0.5px solid #eee; margin: 15px 0;">
-        <h3 style="margin-top: 0; font-size: 1em;">👤 Intruder Logs</h3>
-        <div id="intruder-logs" style="max-height: 250px; overflow-y: auto;">
-            <p style="font-size: 0.8em; color: #999; text-align: center;">No intruders detected</p>
-        </div>
+        <button id="btn-logout" style="width: 100%; padding: 10px; background: #94A3B8; color: white; margin-top: 25px; font-size: 0.8em;">ĐĂNG XUẤT</button>
+
+        <div id="logs" style="margin-top: 20px; font-size: 0.7em; color: #64748b; max-height: 80px; overflow-y: auto; border-top: 1px solid #f1f5f9; padding-top: 10px;"></div>
     </div>
+
     <div id="map"></div>
 
     <script>
-        const map = L.map('map').setView([0, 0], 2);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+        const map = L.map('map').setView([10.762622, 106.660172], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        let marker, activeUsername, authToken, socket;
-        const deviceId = 'android_device_1';
+        let activeUser, token, socket, mfaMode = 'LOGIN';
+        const markers = {}; // Store markers by deviceId
+        let selectedDeviceId = 'all';
 
-        function addLog(msg, type = 'info') {
-            const logs = document.getElementById('logs');
-            if (!logs) return;
-            const div = document.createElement('div');
-            div.style.color = type === 'error' ? '#EF4444' : (type === 'success' ? '#10B981' : '#666');
-            div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            logs.prepend(div);
-            if (logs.children.length > 10) logs.lastChild.remove();
+        const deviceSelector = document.getElementById('device-selector');
+        deviceSelector.onchange = (e) => {
+            selectedDeviceId = e.target.value;
+            if (selectedDeviceId !== 'all' && markers[selectedDeviceId]) {
+                map.panTo(markers[selectedDeviceId].getLatLng());
+                markers[selectedDeviceId].openPopup();
+            }
+        };
+
+        // --- HELPERS ---
+        async function apiCall(url, body) {
+            return fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+                body: JSON.stringify(body)
+            });
         }
 
-        // UI Elements
-        const step1 = document.getElementById('step-1');
-        const regStep = document.getElementById('register-step');
-        const step2 = document.getElementById('step-2');
+        async function secureCall(url, method = 'GET', body = null) {
+            return fetch(url, {
+                method,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'ngrok-skip-browser-warning': 'true'
+                },
+                body: body ? JSON.stringify(body) : null
+            });
+        }
 
-        const loginBtn = document.getElementById('login-btn');
-        const showRegisterBtn = document.getElementById('show-register-btn');
-        const registerBtn = document.getElementById('register-btn');
-        const backToLoginBtn = document.getElementById('back-to-login-btn');
-        const verifyBtn = document.getElementById('verify-btn');
+        function showStep(id) {
+            ['step-login', 'step-otp', 'step-reg'].forEach(s => document.getElementById(s).style.display = s === id ? 'block' : 'none');
+        }
 
-        const usernameInput = document.getElementById('username-input');
-        const passwordInput = document.getElementById('password-input');
+        // --- AUTH LOGIC ---
+        document.getElementById('btn-login').onclick = async () => {
+            const user = document.getElementById('login-user').value.trim();
+            const pass = document.getElementById('login-pass').value;
+            const err = document.getElementById('login-error');
+            const load = document.getElementById('login-loading');
 
-        const regUsernameInput = document.getElementById('reg-username');
-        const regEmailInput = document.getElementById('reg-email');
-        const regPasswordInput = document.getElementById('reg-password');
-
-        const otpInput = document.getElementById('otp-input');
-        const loginError = document.getElementById('login-error');
-        const registerError = document.getElementById('register-error');
-        const otpError = document.getElementById('otp-error');
-
-        let mfaType = 'login'; // 'login' or 'register'
-
-        // Navigation
-        showRegisterBtn.addEventListener('click', () => { step1.style.display = 'none'; regStep.style.display = 'block'; });
-        backToLoginBtn.addEventListener('click', () => { regStep.style.display = 'none'; step1.style.display = 'block'; });
-        document.getElementById('back-to-login').addEventListener('click', () => { step2.style.display = 'none'; step1.style.display = 'block'; });
-
-        // Registration
-        registerBtn.addEventListener('click', async () => {
-            const username = regUsernameInput.value.trim();
-            const email = regEmailInput.value.trim();
-            const password = regPasswordInput.value.trim();
-
-            if (!username || !email || !password) { registerError.innerText = "Vui lòng nhập đầy đủ"; return; }
-
-            registerBtn.disabled = true; registerError.innerText = "";
-            try {
-                console.log('Attempting registration for:', username);
-                const response = await fetch('/api/auth/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, email, password })
-                });
-
-                if (response.status === 404) {
-                    throw new Error("Endpoint not found (404). Please check server routes.");
-                }
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    activeUsername = username;
-                    mfaType = 'register';
-                    document.querySelector('#step-2 h2').innerText = "Xác minh đăng ký";
-                    document.querySelector('#step-2 p').innerText = "Mã xác minh đã được gửi đến email";
-                    regStep.style.display = 'none'; step2.style.display = 'block';
-                } else { registerError.innerText = data.error || "Đăng ký thất bại"; }
-            } catch (e) { registerError.innerText = "Lỗi kết nối server"; }
-            finally { registerBtn.disabled = false; }
-        });
-
-        // Step 1: Password Login
-        loginBtn.addEventListener('click', async () => {
-            const username = usernameInput.value.trim();
-            const password = passwordInput.value.trim();
-            if (!username || !password) { loginError.innerText = "Vui lòng nhập đầy đủ"; return; }
-
-            // Simulation: Calculate a random risk score for web demo
-            const riskScore = Math.floor(Math.random() * 40);
-
-            loginBtn.disabled = true; loginError.innerText = "";
-            try {
-                const response = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password, riskScore })
-                });
-                const data = await response.json();
-
-                if (response.ok) {
-                    activeUsername = data.username; // Use canonical username from server
-                    mfaType = 'login';
-                    document.querySelector('#step-2 h2').innerText = "Xác thực OTP";
-                    document.querySelector('#step-2 p').innerText = "Mã đã được gửi đến email của bạn";
-                    step1.style.display = 'none'; step2.style.display = 'block';
-                } else {
-                    if (data.verificationRequired) {
-                        activeUsername = data.username || username; // Use canonical if possible
-                        mfaType = 'register';
-                        document.querySelector('#step-2 h2').innerText = "Xác minh đăng ký";
-                        step1.style.display = 'none'; step2.style.display = 'block';
-                    }
-                    loginError.innerText = data.error || "Đăng nhập thất bại";
-                }
-            } catch (e) { loginError.innerText = "Lỗi kết nối server"; }
-            finally { loginBtn.disabled = false; }
-        });
-
-        // Step 2: OTP Verification
-        verifyBtn.addEventListener('click', async () => {
-            const otp = otpInput.value.trim();
-            if (otp.length !== 6) { otpError.innerText = "Mã OTP phải có 6 số"; return; }
-
-            verifyBtn.disabled = true; otpError.innerText = "";
-            const endpoint = mfaType === 'login' ? '/api/auth/verify-otp' : '/api/auth/verify-registration';
+            if(!user || !pass) { err.innerText = "Nhập đủ thông tin"; return; }
+            err.innerText = ""; load.style.display = "block";
 
             try {
-                const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: activeUsername, otp })
-                });
-                const data = await response.json();
-                if (response.ok) {
-                    if (mfaType === 'login') {
-                        authToken = data.token;
-                        startSession();
-                    } else {
-                        // After registration verification, go to login
-                        alert("Xác minh thành công! Vui lòng đăng nhập.");
-                        window.location.reload();
-                    }
-                } else { otpError.innerText = data.error || "Mã OTP không đúng"; }
-            } catch (e) { otpError.innerText = "Lỗi kết nối server"; }
-            finally { verifyBtn.disabled = false; }
-        });
+                const res = await apiCall('/api/auth/login', { username: user, password: pass });
+                const data = await res.json();
+                load.style.display = "none";
 
-        function startSession() {
+                if(res.ok) {
+                    activeUser = data.username;
+                    mfaMode = 'LOGIN';
+                    showStep('step-otp');
+                    if(data.mockCode) console.log("OTP:", data.mockCode);
+                } else { err.innerText = data.error || "Lỗi đăng nhập"; }
+            } catch(e) { err.innerText = "Lỗi kết nối server"; load.style.display = "none"; }
+        };
+
+        document.getElementById('btn-verify').onclick = async () => {
+            const code = document.getElementById('otp-code').value.trim();
+            const err = document.getElementById('otp-error');
+            const endpoint = mfaMode === 'LOGIN' ? '/api/auth/verify-otp' : '/api/auth/verify-registration';
+
+            try {
+                const res = await apiCall(endpoint, { username: activeUser, otp: code });
+                const data = await res.json();
+                if(res.ok) {
+                    if(mfaMode === 'LOGIN') {
+                        token = data.token; activeUser = data.username;
+                        startDashboard();
+                    } else { alert("Xác minh thành công! Hãy đăng nhập."); window.location.reload(); }
+                } else { err.innerText = data.error || "Mã không đúng"; }
+            } catch(e) { err.innerText = "Lỗi xác thực"; }
+        };
+
+        function startDashboard() {
             document.getElementById('login-overlay').style.display = 'none';
             document.getElementById('info').style.display = 'block';
-            document.getElementById('display-username').innerText = activeUsername;
-
+            document.getElementById('view-user').innerText = activeUser;
+            fetchDevices();
             initSocket();
-            fetchLocation();
-            fetchIntruders();
-            updateStatusUI();
-            setInterval(updateStatusUI, 10000); // Periodic status sync
+            updateStatus();
+            setInterval(updateStatus, 10000);
         }
+
+        async function fetchDevices() {
+            try {
+                const res = await secureCall(`/api/${activeUser}/location/devices/status`);
+                if (res.ok) {
+                    const devices = await res.json();
+                    deviceSelector.innerHTML = '<option value="all">Tất cả thiết bị</option>';
+                    const listContainer = document.getElementById('device-list');
+                    listContainer.innerHTML = '';
+
+                    devices.forEach(dev => {
+                        const devId = dev._id;
+
+                        // Add to dropdown
+                        const opt = document.createElement('option');
+                        opt.value = devId;
+                        opt.innerText = devId;
+                        deviceSelector.appendChild(opt);
+
+                        // Add to list
+                        const item = document.createElement('div');
+                        item.className = 'device-item';
+                        item.innerHTML = `
+                            <span class="device-name">${devId}</span>
+                            <span class="device-time">Cập nhật: ${new Date(dev.lastTimestamp).toLocaleString()}</span>
+                            <button class="btn-focus" onclick="focusDevice('${devId}')">XEM TRÊN BẢN ĐỒ</button>
+                        `;
+                        listContainer.appendChild(item);
+
+                        // Update marker
+                        updateMarker(devId, dev.lastLatitude, dev.lastLongitude);
+                    });
+                }
+            } catch (e) { console.error("Failed to fetch devices", e); }
+        }
+
+        window.focusDevice = (devId) => {
+            deviceSelector.value = devId;
+            selectedDeviceId = devId;
+            if (markers[devId]) {
+                map.panTo(markers[devId].getLatLng());
+                markers[devId].openPopup();
+            }
+        };
 
         function initSocket() {
-            console.log('Attempting to connect to socket server...');
-            // ... (rest of socket init)
-            // Support both WebSocket and Polling for better ngrok compatibility
-            // Adding extraHeaders for ngrok bypass if possible (only works for polling transport)
-            socket = io({
-                auth: { token: authToken },
-                extraHeaders: {
-                    "ngrok-skip-browser-warning": "true"
-                },
-                reconnection: true,
-                reconnectionAttempts: 10,
-                transports: ['websocket', 'polling']
-            });
-
+            socket = io({ auth: { token }, extraHeaders: { "ngrok-skip-browser-warning": "true" } });
             socket.on('connect', () => {
-                console.log('Successfully connected to real-time server as:', activeUsername);
-                addLog('Real-time connection established', 'success');
-                socket.emit('join', activeUsername);
-                document.getElementById('status').innerText = "LIVE (Real-time)";
-                document.getElementById('status').style.color = "#10B981";
+                console.log("Socket connected to room:", activeUser.toLowerCase());
+                socket.emit('join', activeUser.toLowerCase());
             });
+            socket.on('locationUpdate', (d) => {
+                console.log(`📍 Location Received from ${d.deviceId}:`, d.latitude, d.longitude);
+                updateMarker(d.deviceId, d.latitude, d.longitude);
 
-            socket.on('connect_error', (error) => {
-                console.error('Socket Connection Error:', error.message);
-                addLog(`Connection error: ${error.message}`, 'error');
-                document.getElementById('status').innerText = "LIVE (Polling Fallback)";
-                document.getElementById('status').style.color = "#F59E0B"; // Orange
-
-                // Fallback to polling if socket fails
-                if (!window.pollingInterval) {
-                    console.log('Falling back to polling every 5s...');
-                    window.pollingInterval = setInterval(fetchLocation, 5000);
+                // Add to selector if new
+                if (![...deviceSelector.options].some(o => o.value === d.deviceId)) {
+                    const opt = document.createElement('option');
+                    opt.value = d.deviceId;
+                    opt.innerText = d.deviceId;
+                    deviceSelector.appendChild(opt);
                 }
             });
-
-            socket.on('locationUpdate', (data) => {
-                console.log('Location update received via socket:', data);
-                addLog(`Received location: ${data.latitude.toFixed(4)}, ${data.longitude.toFixed(4)}`, 'success');
-                if (data.deviceId === deviceId) updateMarker(data.latitude, data.longitude, data.timestamp);
-            });
-
-            socket.on('intruderAlert', (data) => {
-                console.warn('INTRUDER ALERT RECEIVED:', data);
-                addLog('⚠️ INTRUDER DETECTED! Photo uploaded.', 'error');
-                fetchIntruders(); // Refresh gallery
-                // Jump to intruder location on map
-                updateMarker(data.latitude, data.longitude, data.timestamp);
-            });
-
             socket.on('statusUpdate', () => {
-                console.log('Status update received via socket');
-                updateStatusUI();
+                console.log("🔄 Status Update Received");
+                updateStatus();
             });
         }
 
-        async function secureFetch(url, options = {}) {
-            options.headers = {
-                ...options.headers,
-                'Authorization': `Bearer ${authToken}`,
-                'ngrok-skip-browser-warning': 'true'
-            };
-            const response = await fetch(url, options);
-            if (response.status === 401 || response.status === 403) { window.location.reload(); }
-            return response;
-        }
-
-        async function fetchLocation() {
-            try {
-                const response = await secureFetch(`/api/\${activeUsername}/location/\${deviceId}`);
-                const data = await response.json();
-                if (data && data.length > 0) {
-                    addLog('Historical data loaded');
-                    updateMarker(data[0].latitude, data[0].longitude, data[0].timestamp);
-                } else {
-                    addLog('No location history found', 'info');
-                }
-            } catch (e) {
-                console.error(e);
-                addLog('Failed to fetch location history', 'error');
+        async function updateStatus() {
+            const res = await secureCall(`/api/${activeUser}/status`);
+            if(res.ok) {
+                const s = await res.json();
+                document.getElementById('cmd-alarm').style.display = s.alarm.active ? 'none' : 'block';
+                document.getElementById('cmd-stop-alarm').style.display = s.alarm.active ? 'block' : 'none';
+                document.getElementById('cmd-lost').style.display = s.lostMode.active ? 'none' : 'block';
+                document.getElementById('cmd-stop-lost').style.display = s.lostMode.active ? 'block' : 'none';
             }
         }
 
-        async function fetchIntruders() {
-            try {
-                const response = await secureFetch(`/api/\${activeUsername}/intruders`);
-                const intruders = await response.json();
-                const container = document.getElementById('intruder-logs');
-
-                if (intruders.length === 0) {
-                    container.innerHTML = '<p style="font-size: 0.8em; color: #999; text-align: center;">No intruders detected</p>';
-                    return;
-                }
-
-                container.innerHTML = '';
-                intruders.forEach(intruder => {
-                    const div = document.createElement('div');
-                    div.className = 'intruder-item';
-                    div.style = 'margin-bottom: 12px; border: 1px solid #eee; border-radius: 8px; overflow: hidden; background: #fafafa;';
-
-                    const time = new Date(intruder.timestamp).toLocaleString();
-
-                    div.innerHTML = `
-                        <img src="\${intruder.imageBase64}" style="width: 100%; height: 180px; object-fit: cover;">
-                        <div style="padding: 10px;">
-                            <div style="font-size: 0.85em; font-weight: bold; color: #333;">\${time}</div>
-                            <div style="font-size: 0.75em; color: #666; margin-top: 4px;">📍 \${intruder.latitude.toFixed(4)}, \${intruder.longitude.toFixed(4)}</div>
-                            <button onclick="updateMarker(\${intruder.latitude}, \${intruder.longitude}, '\${intruder.timestamp}')"
-                                    style="width: 100%; margin-top: 8px; padding: 6px; background: #3B82F6; color: white; font-size: 0.75em;">
-                                VIEW ON MAP
-                            </button>
-                        </div>
-                    `;
-                    container.appendChild(div);
-                });
-            } catch (e) { console.error('Failed to fetch intruders:', e); }
-        }
-
-        async function updateStatusUI() {
-            try {
-                const response = await secureFetch(`/api/${activeUsername}/status`);
-                const status = await response.json();
-                document.getElementById('trigger-alarm').style.display = status.alarm.active ? 'none' : 'block';
-                document.getElementById('stop-alarm').style.display = status.alarm.active ? 'block' : 'none';
-
-                // Lost Mode UI
-                const isLost = status.lostMode && status.lostMode.active;
-                document.getElementById('trigger-lost').style.display = isLost ? 'none' : 'block';
-                document.getElementById('stop-lost').style.display = isLost ? 'block' : 'none';
-            } catch (e) { console.error(e); }
-        }
-
-        function updateMarker(lat, lon, timestamp) {
-            const pos = [lat, lon];
-            if (!marker) {
-                marker = L.marker(pos).addTo(map);
-                map.setView(pos, 16);
+        function updateMarker(deviceId, lat, lon) {
+            if(!markers[deviceId]) {
+                markers[deviceId] = L.marker([lat, lon]).addTo(map).bindPopup(`<b>Device:</b> ${deviceId}`);
             } else {
-                marker.setLatLng(pos);
-                // Auto-center the map only if toggle is checked
-                if (document.getElementById('follow-toggle').checked) {
-                    map.panTo(pos, { animate: true, duration: 1.0 });
-                }
+                markers[deviceId] = markers[deviceId].setLatLng([lat, lon]);
             }
-            document.getElementById('last-update').innerText = timestamp ? new Date(timestamp).toLocaleTimeString() : 'Vừa xong';
 
-            // Visual pulse
-            const indicator = document.getElementById('status');
-            if (indicator) {
-                indicator.style.color = '#3B82F6';
-                setTimeout(() => indicator.style.color = '#10B981', 1000);
+            if (selectedDeviceId === 'all' || selectedDeviceId === deviceId) {
+                map.panTo([lat, lon]);
             }
         }
 
-        document.getElementById('trigger-alarm').addEventListener('click', () => toggleCommand('alarm', true));
-        document.getElementById('stop-alarm').addEventListener('click', () => toggleCommand('alarm', false));
+        // --- COMMANDS ---
+        document.getElementById('cmd-alarm').onclick = () => secureCall(`/api/${activeUser}/alarm`, 'POST', { active: true });
+        document.getElementById('cmd-stop-alarm').onclick = () => secureCall(`/api/${activeUser}/alarm`, 'POST', { active: false });
+        document.getElementById('cmd-lost').onclick = () => {
+            const p = prompt("Số điện thoại:", "0123456789");
+            if(p) secureCall(`/api/${activeUser}/lost-mode`, 'POST', { active: true, message: "DEVICE LOST", phoneNumber: p });
+        };
+        document.getElementById('cmd-stop-lost').onclick = () => secureCall(`/api/${activeUser}/lost-mode`, 'POST', { active: false });
+        document.getElementById('cmd-track').onclick = () => secureCall(`/api/${activeUser}/track`, 'POST', { active: true });
 
-        document.getElementById('trigger-lost').addEventListener('click', () => {
-            const phone = prompt("Nhập số điện thoại liên hệ:", "0123456789");
-            const msg = prompt("Nhập lời nhắn cho người nhặt được:", "THIS DEVICE IS LOST. Reward Available.");
-            if (phone !== null) toggleCommand('lost-mode', true, { phoneNumber: phone, message: msg });
-        });
-        document.getElementById('stop-lost').addEventListener('click', () => toggleCommand('lost-mode', false));
+        // --- NAV ---
+        document.getElementById('go-reg').onclick = () => showStep('step-reg');
+        document.getElementById('reg-to-login').onclick = () => showStep('step-login');
+        document.getElementById('back-to-login').onclick = () => showStep('step-login');
+        document.getElementById('btn-logout').onclick = () => window.location.reload();
 
-        document.getElementById('track-now').addEventListener('click', () => toggleCommand('track', true));
-
-        async function toggleCommand(type, active, extraData = {}) {
-            const btnId = type === 'track' ? 'track-now' :
-                          type === 'lost-mode' ? (active ? 'trigger-lost' : 'stop-lost') :
-                          type === 'alarm' ? (active ? 'trigger-alarm' : 'stop-alarm') : null;
-            const btn = btnId ? document.getElementById(btnId) : null;
-            const originalText = btn ? btn.innerText : '';
-
-            try {
-                if (btn) {
-                    btn.disabled = true;
-                    btn.innerText = "📍 REQUESTING...";
-                    if (type === 'track') btn.style.background = "#94A3B8";
-                }
-
-                await secureFetch(`/api/${activeUsername}/${type}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ active, ...extraData })
-                });
-
-                if (btn && type === 'track') {
-                    setTimeout(() => {
-                        btn.disabled = false;
-                        btn.innerText = originalText;
-                        btn.style.background = "#3B82F6";
-                    }, 2000);
-                } else if (btn) {
-                    btn.disabled = false;
-                    btn.innerText = originalText;
-                }
-
-                updateStatusUI();
-            } catch (e) {
-                console.error(e);
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerText = "❌ FAILED";
-                    setTimeout(() => { btn.innerText = originalText; if(type==='track') btn.style.background = "#3B82F6"; }, 2000);
-                }
-            }
-        }
-
-        document.getElementById('logout-btn').addEventListener('click', () => window.location.reload());
+        document.getElementById('btn-reg').onclick = async () => {
+            const u = document.getElementById('reg-user').value.trim();
+            const e = document.getElementById('reg-email').value.trim();
+            const p = document.getElementById('reg-pass').value;
+            const err = document.getElementById('reg-error');
+            if(!u || !e || !p) { err.innerText = "Nhập đủ thông tin"; return; }
+            err.innerText = "";
+            const res = await apiCall('/api/auth/register', { username: u, email: e, password: p });
+            const data = await res.json();
+            if(res.ok) { activeUser = u; mfaMode = 'REG'; showStep('step-otp'); }
+            else { err.innerText = data.error; }
+        };
     </script>
 </body>
 </html>

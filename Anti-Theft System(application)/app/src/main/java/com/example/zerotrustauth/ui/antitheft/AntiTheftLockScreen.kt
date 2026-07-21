@@ -1,5 +1,7 @@
 package com.example.zerotrustauth.ui.antitheft
 
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
@@ -27,6 +29,15 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 
+/**
+ * Safely find the FragmentActivity from the context
+ */
+fun Context.findActivity(): FragmentActivity? = when (this) {
+    is FragmentActivity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
 @Composable
 fun AntiTheftLockScreen(
     onUnlockSuccess: () -> Unit
@@ -38,23 +49,35 @@ fun AntiTheftLockScreen(
     val securityPrefs = remember { SecurityPrefs(context) }
     val correctPin = "1234" 
 
+    // Hardware checks
+    val biometricManager = remember { BiometricManager.from(context) }
+    val canUseBiometric = remember {
+        biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
+    }
+
     // Biometric setup
     val executor = remember { ContextCompat.getMainExecutor(context) }
     val biometricPrompt = remember {
-        BiometricPrompt(context as FragmentActivity, executor,
-            object : BiometricPrompt.AuthenticationCallback() {
-                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    super.onAuthenticationSucceeded(result)
-                    scope.launch {
-                        securityPrefs.setRemoteLockdown(false)
-                        onUnlockSuccess()
+        val activity = context.findActivity()
+        if (activity != null) {
+            BiometricPrompt(activity, executor,
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                        super.onAuthenticationSucceeded(result)
+                        scope.launch {
+                            securityPrefs.setRemoteLockdown(false)
+                            onUnlockSuccess()
+                        }
                     }
-                }
-                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    super.onAuthenticationError(errorCode, errString)
-                    error = "Lỗi sinh trắc học: $errString"
-                }
-            })
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        super.onAuthenticationError(errorCode, errString)
+                        // Ignore cancellation by user
+                        if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                            error = "Lỗi sinh trắc học: $errString"
+                        }
+                    }
+                })
+        } else null
     }
 
     val promptInfo = remember {
@@ -67,14 +90,12 @@ fun AntiTheftLockScreen(
     }
 
     // Prevent back navigation while locked
-    BackHandler(enabled = true) {
-        // Do nothing
-    }
+    BackHandler(enabled = true) { }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1A1A1A)) // Dark security theme
+            .background(Color(0xFF1A1A1A)) 
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -154,25 +175,27 @@ fun AntiTheftLockScreen(
             Text("MỞ KHOÁ BẰNG PIN", fontWeight = FontWeight.Bold)
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        if (canUseBiometric && biometricPrompt != null) {
+            Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedButton(
-            onClick = {
-                try {
-                    biometricPrompt.authenticate(promptInfo)
-                } catch (e: Exception) {
-                    error = "Thiết bị không hỗ trợ sinh trắc học"
-                }
-            },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = Color.White
-            ),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray)
-        ) {
-            Icon(Icons.Default.Fingerprint, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("SỬ DỤNG FACE ID / VÂN TAY", fontWeight = FontWeight.Bold)
+            OutlinedButton(
+                onClick = {
+                    try {
+                        biometricPrompt.authenticate(promptInfo)
+                    } catch (e: Exception) {
+                        error = "Thiết bị không hỗ trợ sinh trắc học"
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color.White
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray)
+            ) {
+                Icon(Icons.Default.Fingerprint, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("SỬ DỤNG FACE ID / VÂN TAY", fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

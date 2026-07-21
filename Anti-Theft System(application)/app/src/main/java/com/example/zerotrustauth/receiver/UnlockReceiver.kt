@@ -38,7 +38,7 @@ class UnlockReceiver : BroadcastReceiver() {
                         apiService.sendLocation(
                             username = username,
                             location = LocationRequest(
-                                deviceId = "android_device_1",
+                                deviceId = locationHelper.getDeviceId(),
                                 latitude = it.latitude,
                                 longitude = it.longitude
                             )

@@ -50,15 +50,24 @@ fun LoginHistoryScreen(onBack: () -> Unit) {
             ) {
                 item { Spacer(modifier = Modifier.height(8.dp)) }
 
-                val historyList = listOf(
-                    HistoryItem("Đăng nhập thành công", "12/10/2023 10:30", "Hà Nội, VN", "Chrome / Windows", Color(0xFF10B981)),
-                    HistoryItem("Xác thực MFA thành công", "12/10/2023 10:31", "Hà Nội, VN", "App Mobile", Color(0xFF3B82F6)),
-                    HistoryItem("Phát hiện đăng nhập lạ", "11/10/2023 23:15", "Singapore", "Safari / iOS", Color(0xFFEF4444)),
-                    HistoryItem("Đổi mật khẩu", "10/10/2023 08:00", "Hà Nội, VN", "Chrome / macOS", Color(0xFFF59E0B))
-                )
-
-                items(historyList) { item ->
-                    HistoryRow(item, isDarkMode)
+                item {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(top = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = Color.Gray.copy(alpha = 0.5f)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            "Không có lịch sử đăng nhập nào được ghi lại.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.Gray
+                        )
+                    }
                 }
             }
         }

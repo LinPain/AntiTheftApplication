@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.zerotrustauth.ThemeManager
 import com.example.zerotrustauth.data.SecurityPrefs
+import com.example.zerotrustauth.logic.LocationHelper
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,6 +35,9 @@ fun DeviceManagementScreen(onBack: () -> Unit) {
     val securityPrefs = remember { SecurityPrefs(context) }
     val isDeviceTrusted by securityPrefs.isDeviceTrusted.collectAsState(initial = false)
     val scope = rememberCoroutineScope()
+    
+    val locationHelper = remember { LocationHelper(context) }
+    val currentDeviceName = remember { locationHelper.getDeviceName() }
 
     val isDarkMode = ThemeManager.isDarkTheme.value
     val backgroundGradient = if (isDarkMode) {
@@ -89,8 +93,7 @@ fun DeviceManagementScreen(onBack: () -> Unit) {
                 }
 
                 val devices = listOf(
-                    DeviceItemData("Android Device 1 (Hiện tại)", "Đang hoạt động", true, isDeviceTrusted),
-                    DeviceItemData("Web Dashboard", "Singapore • 2 giờ trước", false, true)
+                    DeviceItemData("$currentDeviceName (Hiện tại)", "Đang hoạt động", true, isDeviceTrusted)
                 )
 
                 items(devices) { device ->

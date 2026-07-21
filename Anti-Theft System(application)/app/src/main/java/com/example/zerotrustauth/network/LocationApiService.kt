@@ -46,32 +46,50 @@ data class FullStatus(
 // Auth Requests
 data class RegisterRequest(val username: String, val email: String, val password: String)
 data class LoginRequest(val username: String, val password: String, val riskScore: Int = 0)
+data class ForgotPasswordRequest(val identifier: String)
+data class VerifyResetRequest(val username: String, val otp: String)
+data class ResetPasswordRequest(val resetToken: String, val newPassword: String)
 data class VerifyOtpRequest(val username: String, val otp: String)
+data class ResendOtpRequest(val username: String, val type: String)
 data class RiskAlertRequest(val username: String, val riskScore: Int)
 data class SimAlertRequest(val username: String, val operatorName: String)
 data class IntruderRequest(val imageBase64: String, val latitude: Double, val longitude: Double)
 data class AuthResponse(
     val message: String,
     val token: String? = null,
+    val resetToken: String? = null,
     val username: String? = null,
+    val mockCode: String? = null,
     val mfaRequired: Boolean = false,
     val lockdownRequired: Boolean = false,
     val verificationRequired: Boolean = false
 )
 
 interface LocationApiService {
-    // Auth APIs - No token needed or provided separately if required
+    // Auth APIs
     @POST("api/auth/register")
     suspend fun register(@Body request: RegisterRequest): AuthResponse
 
     @POST("api/auth/login")
     suspend fun login(@Body request: LoginRequest): AuthResponse
 
+    @POST("api/auth/forgot-password")
+    suspend fun forgotPassword(@Body request: ForgotPasswordRequest): AuthResponse
+
+    @POST("api/auth/verify-reset")
+    suspend fun verifyReset(@Body request: VerifyResetRequest): AuthResponse
+
+    @POST("api/auth/reset-password")
+    suspend fun resetPassword(@Body request: ResetPasswordRequest): AuthResponse
+
     @POST("api/auth/verify-otp")
     suspend fun verifyOtp(@Body request: VerifyOtpRequest): AuthResponse
 
     @POST("api/auth/verify-registration")
     suspend fun verifyRegistration(@Body request: VerifyOtpRequest): AuthResponse
+
+    @POST("api/auth/resend-otp")
+    suspend fun resendOtp(@Body request: ResendOtpRequest): AuthResponse
 
     @POST("api/auth/alert-risk")
     suspend fun notifyRiskAlert(

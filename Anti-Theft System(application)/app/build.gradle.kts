@@ -5,16 +5,12 @@ plugins {
 
 android {
     namespace = "com.example.zerotrustauth"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.zerotrustauth"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
 
@@ -61,6 +57,8 @@ dependencies {
 
     implementation(libs.osmdroid)
     implementation(libs.play.services.location)
+    implementation(libs.play.services.wearable)
+    implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.retrofit)
     implementation(libs.retrofit.gson)
     implementation(libs.okhttp)

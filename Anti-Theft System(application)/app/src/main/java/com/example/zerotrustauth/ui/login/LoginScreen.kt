@@ -1,6 +1,7 @@
 package com.example.zerotrustauth.ui.login
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -13,7 +14,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import com.example.zerotrustauth.ThemeManager
@@ -21,7 +21,6 @@ import com.example.zerotrustauth.ui.theme.*
 import com.example.zerotrustauth.data.SecurityPrefs
 import androidx.compose.runtime.collectAsState
 import com.example.zerotrustauth.logic.RiskEngine
-import androidx.compose.ui.platform.LocalContext
 import com.example.zerotrustauth.network.LocationApiService
 import com.example.zerotrustauth.network.LoginRequest
 import kotlinx.coroutines.launch
@@ -29,6 +28,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun LoginScreen(
     onNavigateToRegister: () -> Unit,
+    onNavigateToForgotPassword: () -> Unit,
     onLoginSuccess: (String) -> Unit,
     onNavigateToMFA: (String) -> Unit,
     onNavigateToLockdown: () -> Unit,
@@ -38,10 +38,14 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var rememberMe by remember { mutableStateOf(false) }
+    var showPinSetup by remember { mutableStateOf(false) }
+    var pendingSuccessData by remember { mutableStateOf<String?>(null) }
     
-    val context = LocalContext.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val securityPrefs = remember { SecurityPrefs(context) }
     val failedUnlockCount = securityPrefs.failedUnlockCount.collectAsState(initial = 0).value
+    val isOutsideSafeZone = securityPrefs.isOutsideSafeZone.collectAsState(initial = false).value
     
     val isDarkMode = ThemeManager.isDarkTheme.value
     val scope = rememberCoroutineScope()
@@ -59,7 +63,6 @@ fun LoginScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(backgroundGradient)) {
         Box(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-            // Top Bar
             Row(
                 modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -73,7 +76,6 @@ fun LoginScreen(
                 }
             }
 
-            // Main Content
             Column(
                 modifier = Modifier.fillMaxWidth().align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -125,7 +127,32 @@ fun LoginScreen(
                             enabled = !isLoading
                         )
                         
-                        Spacer(modifier = Modifier.height(32.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        TextButton(
+                            onClick = onNavigateToForgotPassword,
+                            enabled = !isLoading,
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text("Quên mật khẩu?", color = if (isDarkMode) Color.LightGray else Color.Gray)
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                        ) {
+                            Checkbox(
+                                checked = rememberMe,
+                                onCheckedChange = { rememberMe = it },
+                                enabled = !isLoading
+                            )
+                            Text(
+                                "Ghi nhớ tài khoản",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isDarkMode) Color.White else Color.Black,
+                                modifier = Modifier.clickable { rememberMe = !rememberMe }
+                            )
+                        }
 
                         Button(
                             onClick = { 
@@ -136,14 +163,13 @@ fun LoginScreen(
                                 isLoading = true
                                 scope.launch {
                                     try {
-                                        // Calculate Risk Score before login
                                         val riskScore = RiskEngine.calculateRiskScore(
                                             isTrustedDevice = true, 
-                                            isKnownLocation = true,
+                                            isOutsideSafeZone = isOutsideSafeZone,
                                             failedUnlockAttempts = failedUnlockCount
                                         )
 
-                                        val response = apiService.login(LoginRequest(username, password, riskScore))
+                                        val response = apiService.login(LoginRequest(username.trim().lowercase(), password, riskScore))
                                         isLoading = false
                                         
                                         if (response.lockdownRequired) {
@@ -153,13 +179,20 @@ fun LoginScreen(
                                         } else if (response.mfaRequired) {
                                             onNavigateToMFA(response.username ?: username)
                                         } else {
-                                            // Low risk, token is already returned
                                             securityPrefs.saveAuthData(response.token, response.username ?: username)
-                                            onLoginSuccess(response.username ?: username)
+                                            securityPrefs.setRememberMe(rememberMe)
+                                            
+                                            if (rememberMe) {
+                                                pendingSuccessData = response.username ?: username
+                                                showPinSetup = true
+                                            } else {
+                                                securityPrefs.setLocalPin(null)
+                                                onLoginSuccess(response.username ?: username)
+                                            }
                                         }
                                     } catch (e: Exception) {
                                         isLoading = false
-                                        errorMessage = "Đăng nhập thất bại: \${e.message}"
+                                        errorMessage = "Đăng nhập thất bại: ${e.message}"
                                     }
                                 }
                             },
@@ -185,6 +218,22 @@ fun LoginScreen(
                     }
                 }
             }
+        }
+
+        if (showPinSetup) {
+            PinSetupDialog(
+                onDismiss = { 
+                    showPinSetup = false
+                    pendingSuccessData?.let { onLoginSuccess(it) }
+                },
+                onPinSet = { pin ->
+                    scope.launch {
+                        securityPrefs.setLocalPin(pin)
+                        showPinSetup = false
+                        pendingSuccessData?.let { onLoginSuccess(it) }
+                    }
+                }
+            )
         }
     }
 }

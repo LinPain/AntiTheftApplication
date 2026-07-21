@@ -75,11 +75,11 @@ fun LocationTrackingScreen(
     )
 
     LaunchedEffect(Unit) {
-        if (!hasLocationPermission) {
-            launcher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
+        // Notification permission is less intrusive, but we still check SDK version
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
     }
 
@@ -98,6 +98,7 @@ fun LocationTrackingScreen(
     // Periodic Location Updates for UI (Real-time Follow)
     LaunchedEffect(hasLocationPermission, isRealTimeTrackingEnabled) {
         if (hasLocationPermission && initialLat == null) {
+            val devId = locationHelper.getDeviceId()
             while (true) {
                 locationHelper.getCurrentLocation().addOnSuccessListener { location ->
                     location?.let {
@@ -111,13 +112,13 @@ fun LocationTrackingScreen(
                                 try {
                                     android.util.Log.d("LocationTrackingUI", "Sending UI-triggered location update")
                                     apiService.sendLocation(
-                                        username = username,
-                                        location = LocationRequest(
-                                            deviceId = "android_device_1",
-                                            latitude = it.latitude,
-                                            longitude = it.longitude
-                                        )
+                                    username = username,
+                                    location = LocationRequest(
+                                        deviceId = devId,
+                                        latitude = it.latitude,
+                                        longitude = it.longitude
                                     )
+                                )
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                 }

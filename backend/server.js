@@ -4,213 +4,206 @@ const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
-const locationRoutes = require('./routes/locationRoutes');
-const authRoutes = require('./routes/authRoutes');
+const User = require('./models/User');
+const OTPLog = require('./models/OTPLog');
 const Intruder = require('./models/Intruder');
+const locationRoutes = require('./routes/locationRoutes');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
+    cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_key';
+const MOCK_OTP = process.env.MOCK_OTP === 'true';
 
+// --- EMAIL CONFIG ---
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+});
+
+const sendOTPEmail = async (email, code, type, username = 'User') => {
+    let subject = 'Anti-Theft System - Authentication';
+    let msgText = `Code: ${code}`;
+    if (type === 'LOGIN') subject = 'Mã xác thực ĐĂNG NHẬP', msgText = `Mã: ${code}. Hiệu lực 10 phút.`;
+    if (type === 'REGISTRATION') subject = 'Xác minh ĐĂNG KÝ', msgText = `Chào ${username}! Mã: ${code}`;
+    if (type === 'RESET') subject = 'Đặt lại MẬT KHẨU', msgText = `Mã reset: ${code}`;
+
+    await transporter.sendMail({
+        from: process.env.EMAIL_USER, to: email,
+        subject: `Anti-Theft System - ${subject}`, text: msgText
+    });
+};
+
+// --- STATE & UTILS ---
+let userStates = {};
+function getUserState(username) {
+    const key = username.toLowerCase().trim();
+    if (!userStates[key]) userStates[key] = {
+        alarm: { active: false, timestamp: 0 },
+        lockdown: { active: false, timestamp: 0 },
+        lostMode: { active: false, message: "LOST", phoneNumber: "", timestamp: 0 },
+        trackRequest: { active: false, timestamp: 0 }
+    };
+    return userStates[key];
+}
+
+const createOTP = async (username, type, email) => {
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const identifier = username.toLowerCase().trim();
+    await OTPLog.deleteMany({ identifier, type });
+    await new OTPLog({ identifier, code, type, expiresAt: new Date(Date.now() + 600000) }).save();
+    await sendOTPEmail(email, code, type, username);
+    return code;
+};
+
+// --- MIDDLEWARE ---
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
 
-// Share socket.io instance with routes
-app.set('io', io);
-
-// JWT Middleware to protect routes
-const authenticateToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
-
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.status(403).json({ error: 'Invalid or expired token.' });
-
-        const requestedUsername = req.params.username || req.username;
-
-        // Detailed logging for debugging 403
-        if (requestedUsername && requestedUsername !== user.username) {
-            console.error(`[AUTH-DENIED] Mismatch: URL=${requestedUsername}, Token=${user.username}`);
-            return res.status(403).json({
-                error: 'Access denied. You can only access your own data.',
-                debug: { requested: requestedUsername, actual: user.username }
-            });
-        }
-
-        req.user = user;
+const authGuard = (req, res, next) => {
+    const token = req.headers['authorization']?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'No token' });
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
+        if (err) return res.status(403).json({ error: 'Expired' });
+        const reqUser = (req.params.username || "").toLowerCase().trim();
+        const tokenUser = (decoded.username || "").toLowerCase().trim();
+        if (reqUser && reqUser !== tokenUser) return res.status(403).json({ error: 'Forbidden' });
+        req.user = decoded;
         next();
     });
 };
 
-// Routes - REGISTER AUTH FIRST to avoid wildcard conflicts with :username
-app.use('/api/auth', authRoutes);
+// --- DIRECT AUTH ENDPOINTS (Flattened to avoid 404s) ---
 
-// Protected Namespaced Routes
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        let { username, password, email } = req.body;
+        username = username.toLowerCase().trim(); email = email.toLowerCase().trim();
+        if (await User.findOne({ $or: [{ username }, { email }] })) return res.status(400).json({ error: 'Exists' });
+        const user = new User({ username, password: await bcrypt.hash(password, 10), email, isVerified: false });
+        await user.save();
+        const code = await createOTP(username, 'REGISTRATION', email);
+        res.status(201).json({ verificationRequired: true, username, mockCode: MOCK_OTP ? code : undefined });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        let { username, password, riskScore } = req.body;
+        username = username.toLowerCase().trim();
+        const user = await User.findOne({ $or: [{ username }, { email: username }] });
+        if (!user || !(await bcrypt.compare(password, user.password))) return res.status(401).json({ error: 'Invalid' });
+        if (!user.isVerified) return res.status(403).json({ error: 'Unverified', verificationRequired: true, username: user.username });
+        if (riskScore > 70) return res.json({ lockdownRequired: true });
+        const code = await createOTP(user.username, 'LOGIN', user.email);
+        res.json({ mfaRequired: true, username: user.username, mockCode: MOCK_OTP ? code : undefined });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/verify-otp', async (req, res) => {
+    try {
+        let { username, otp } = req.body;
+        username = username.toLowerCase().trim();
+        const user = await User.findOne({ $or: [{ username }, { email: username }] });
+        const log = await OTPLog.findOne({ identifier: user.username.toLowerCase(), code: otp, type: 'LOGIN' });
+        if (!log || log.expiresAt < new Date()) return res.status(401).json({ error: 'Invalid OTP' });
+        const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '1h' });
+        await OTPLog.deleteOne({ _id: log._id });
+        res.json({ token, username: user.username });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/verify-registration', async (req, res) => {
+    try {
+        let { username, otp } = req.body;
+        username = username.toLowerCase().trim();
+        const user = await User.findOne({ $or: [{ username }, { email: username }] });
+        const log = await OTPLog.findOne({ identifier: user.username.toLowerCase(), code: otp, type: 'REGISTRATION' });
+        if (!log || log.expiresAt < new Date()) return res.status(401).json({ error: 'Invalid' });
+        user.isVerified = true; await user.save();
+        await OTPLog.deleteOne({ _id: log._id });
+        res.json({ message: 'Success' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/resend-otp', async (req, res) => {
+    try {
+        let { username, type } = req.body;
+        const user = await User.findOne({ $or: [{ username }, { email: username }] });
+        const code = await createOTP(user.username, type, user.email);
+        res.json({ mockCode: MOCK_OTP ? code : undefined });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- PROTECTED API ---
 app.use('/api/:username/location', (req, res, next) => {
-    req.username = req.params.username;
-    authenticateToken(req, res, next);
+    req.username = (req.params.username || "").toLowerCase().trim();
+    authGuard(req, res, next);
 }, locationRoutes);
 
-// Root route
-app.get('/', (req, res) => {
-    res.send('Anti-Theft System GPS Tracking Backend is running');
+app.get('/api/:username/status', authGuard, (req, res) => res.json(getUserState(req.params.username)));
+
+app.post('/api/:username/lost-mode', authGuard, (req, res) => {
+    const state = getUserState(req.params.username);
+    state.lostMode = { active: !!req.body.active, message: req.body.message, phoneNumber: req.body.phoneNumber, timestamp: Date.now() };
+    io.to(req.params.username.toLowerCase()).emit('statusUpdate');
+    res.json({ message: 'OK' });
 });
 
-// User-specific states (In a real app, these would be in MongoDB)
-let userStates = {};
-
-function getUserState(username) {
-    if (!userStates[username]) {
-        userStates[username] = {
-            alarm: { active: false, timestamp: 0 },
-            lockdown: { active: false, timestamp: 0 },
-            lostMode: { active: false, message: "", phoneNumber: "", timestamp: 0 },
-            trackRequest: { active: false, timestamp: 0 }
-        };
-    }
-    return userStates[username];
-}
-
-// Protected Status Routes
-app.get('/api/:username/status', authenticateToken, (req, res) => {
-    const { username } = req.params;
-    res.json(getUserState(username));
+app.post('/api/:username/alarm', authGuard, (req, res) => {
+    const state = getUserState(req.params.username);
+    state.alarm = { active: !!req.body.active, timestamp: Date.now() };
+    io.to(req.params.username.toLowerCase()).emit('statusUpdate');
+    res.json({ message: 'OK' });
 });
 
-app.post('/api/:username/lockdown', authenticateToken, (req, res) => {
-    const { username } = req.params;
-    const { active } = req.body;
-    const state = getUserState(username);
-    state.lockdown = { active: !!active, timestamp: Date.now() };
-    io.to(username).emit('statusUpdate', { lockdown: state.lockdown });
-    res.json({ message: `Lockdown ${active ? 'activated' : 'deactivated'} for ${username}`, state: state.lockdown });
+app.post('/api/:username/track', authGuard, (req, res) => {
+    getUserState(req.params.username).trackRequest = { active: true, timestamp: Date.now() };
+    io.to(req.params.username.toLowerCase()).emit('trackRequested');
+    res.json({ message: 'OK' });
 });
 
-app.post('/api/:username/lost-mode', authenticateToken, (req, res) => {
-    const { username } = req.params;
-    const { active, message, phoneNumber } = req.body;
-    const state = getUserState(username);
-    state.lostMode = {
-        active: !!active,
-        message: message || "THIS DEVICE IS LOST",
-        phoneNumber: phoneNumber || "",
-        timestamp: Date.now()
-    };
-    io.to(username).emit('statusUpdate', { lostMode: state.lostMode });
-    res.json({ message: `Lost Mode ${active ? 'activated' : 'deactivated'} for ${username}`, state: state.lostMode });
+app.post('/api/:username/intruder', authGuard, async (req, res) => {
+    const entry = new Intruder({ username: req.params.username.toLowerCase(), ...req.body });
+    await entry.save();
+    io.to(req.params.username.toLowerCase()).emit('intruderAlert', entry);
+    res.status(201).json({ message: 'OK' });
 });
 
-app.post('/api/:username/track', authenticateToken, (req, res) => {
-    const { username } = req.params;
-    const state = getUserState(username);
-    state.trackRequest = { active: true, timestamp: Date.now() };
-    io.to(username).emit('trackRequested', { timestamp: state.trackRequest.timestamp });
-    res.json({ message: `Track request sent to ${username}`, state: state.trackRequest });
+app.get('/api/:username/intruders', authGuard, async (req, res) => {
+    const list = await Intruder.find({ username: req.params.username.toLowerCase() }).sort({ timestamp: -1 }).limit(20);
+    res.json(list);
 });
 
-app.get('/api/:username/alarm', authenticateToken, (req, res) => {
-    const { username } = req.params;
-    res.json(getUserState(username).alarm);
-});
+// --- STATIC & SOCKET ---
+app.use(express.static('public'));
+app.get('/', (req, res) => res.send('Active'));
 
-app.post('/api/:username/alarm', authenticateToken, (req, res) => {
-    const { username } = req.params;
-    const { active } = req.body;
-    const state = getUserState(username);
-    state.alarm = { active: !!active, timestamp: Date.now() };
-    io.to(username).emit('statusUpdate', { alarm: state.alarm });
-    res.json({ message: `Alarm ${active ? 'activated' : 'deactivated'} for ${username}`, state: state.alarm });
-});
-
-// Intruder Detection Routes
-app.post('/api/:username/intruder', authenticateToken, async (req, res) => {
-    try {
-        const { username } = req.params;
-        const { imageBase64, latitude, longitude } = req.body;
-
-        const newIntruder = new Intruder({
-            username,
-            imageBase64,
-            latitude,
-            longitude
-        });
-
-        await newIntruder.save();
-        console.log(`[SECURITY] Intruder alert for ${username}! Photo captured at ${latitude}, ${longitude}`);
-
-        // Notify web client immediately
-        io.to(username).emit('intruderAlert', newIntruder);
-
-        res.status(201).json({ message: 'Intruder log saved' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.get('/api/:username/intruders', authenticateToken, async (req, res) => {
-    try {
-        const { username } = req.params;
-        const history = await Intruder.find({ username })
-            .sort({ timestamp: -1 })
-            .limit(20);
-        res.json(history);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Socket.io Connection Logic with Auth
 io.use((socket, next) => {
     const token = socket.handshake.auth.token;
-    if (!token) return next(new Error("Authentication error"));
-
+    if (!token) return next(new Error("Auth"));
     jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return next(new Error("Authentication error"));
-        socket.user = user;
-        next();
+        if (err) return next(new Error("Auth"));
+        socket.user = user; next();
     });
 });
 
 io.on('connection', (socket) => {
-    console.log('New client connected:', socket.id, 'User:', socket.user.username);
-
-    socket.on('join', (username) => {
-        if (username === socket.user.username) {
-            socket.join(username);
-            console.log(`Socket ${socket.id} joined room: ${username}`);
-        } else {
-            console.warn(`Socket ${socket.id} tried to join unauthorized room: ${username}`);
-        }
-    });
-
-    socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
+    socket.on('join', (user) => {
+        if (user.toLowerCase() === socket.user.username.toLowerCase()) socket.join(user.toLowerCase());
     });
 });
 
-// Connect to MongoDB
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/zerotrustauth';
-
-mongoose.connect(MONGODB_URI)
-    .then(() => {
-        console.log('Connected to MongoDB');
-        server.listen(PORT, () => {
-            console.log(`Server is running on port ${PORT}`);
-        });
-    })
-    .catch(err => {
-        console.error('MongoDB connection error:', err);
-    });
+mongoose.connect(MONGODB_URI).then(() => {
+    console.log('DB Connected');
+    server.listen(PORT, () => console.log(`Listening on ${PORT}`));
+});

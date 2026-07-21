@@ -11,17 +11,25 @@ import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Token
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.zerotrustauth.ThemeManager
+import com.example.zerotrustauth.data.SecurityPrefs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionManagementScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val securityPrefs = remember { SecurityPrefs(context) }
+    val authToken = securityPrefs.authToken.collectAsState(initial = null).value
+
     val isDarkMode = ThemeManager.isDarkTheme.value
     val backgroundGradient = if (isDarkMode) {
         Brush.verticalGradient(colors = listOf(Color(0xFF020617), Color(0xFF0F172A), Color(0xFF1E293B)))
@@ -57,13 +65,18 @@ fun SessionManagementScreen(onBack: () -> Unit) {
                     )
                 }
 
-                val sessions = listOf(
-                    SessionItem("JWT Access Token", "Hết hạn trong: 59 phút", "Bảo mật mức cao", true),
-                    SessionItem("Refresh Token", "Hết hạn trong: 30 ngày", "Dùng để gia hạn", false)
-                )
+                if (!authToken.isNullOrEmpty()) {
+                    val sessions = listOf(
+                        SessionItem("JWT Access Token", "Phiên hiện tại (${authToken.substring(0, 8.coerceAtMost(authToken.length))}...)", "Bảo mật mức cao", true)
+                    )
 
-                items(sessions) { session ->
-                    SessionRow(session, isDarkMode)
+                    items(sessions) { session ->
+                        SessionRow(session, isDarkMode)
+                    }
+                } else {
+                    item {
+                        Text("Không có phiên hoạt động nào được tìm thấy.", color = Color.Gray)
+                    }
                 }
             }
         }

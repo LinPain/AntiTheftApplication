@@ -11,6 +11,8 @@ composeBom = "2024.09.00"
 junitJupiter = "5.14.0"
 osmdroid = "6.1.20"
 playServicesLocation = "21.3.0"
+playServicesWearable = "20.0.1"
+kotlinxCoroutinesPlayServices = "1.11.0"
 retrofit = "2.9.0"
 okhttp = "4.12.0"
 dataStore = "1.1.1"
@@ -37,6 +39,8 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version.ref = "junitJupiter" }
 osmdroid = { group = "org.osmdroid", name = "osmdroid-android", version.ref = "osmdroid" }
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
+play-services-wearable = { group = "com.google.android.gms", name = "play-services-wearable", version.ref = "playServicesWearable" }
+kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "kotlinxCoroutinesPlayServices" }
 retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
 retrofit-gson = { group = "com.squareup.retrofit2", name = "converter-gson", version.ref = "retrofit" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }

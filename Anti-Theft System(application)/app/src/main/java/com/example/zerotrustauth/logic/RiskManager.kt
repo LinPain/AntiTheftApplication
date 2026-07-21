@@ -16,22 +16,17 @@ object RiskManager {
         val username = prefs.username.first() ?: return
         val failedUnlockCount = prefs.failedUnlockCount.first()
         val isDeviceTrusted = prefs.isDeviceTrusted.first()
-        
-        // In a real app, we'd check current location against safeZoneLat/Lon here.
-        // For this showcase, we'll assume isKnownLocation is true unless 
-        // LocationService explicitly flags it.
-        val isKnownLocation = true
+        val isOutsideSafeZone = prefs.isOutsideSafeZone.first()
 
         val riskScore = RiskEngine.calculateRiskScore(
             isTrustedDevice = isDeviceTrusted,
-            isKnownLocation = isKnownLocation,
+            isOutsideSafeZone = isOutsideSafeZone,
             failedUnlockAttempts = failedUnlockCount,
             accessTime = LocalTime.now()
         )
 
         Log.d("RiskManager", "Checking risk: $riskScore for $username")
 
-        // Trigger alert only if risk is high or significantly increased
         if (riskScore >= 70 && riskScore > lastAlertScore) {
             try {
                 Log.w("RiskManager", "CRITICAL RISK DETECTED ($riskScore)! Sending alert...")
@@ -42,7 +37,6 @@ object RiskManager {
                 Log.e("RiskManager", "Failed to send risk alert: ${e.message}")
             }
         } else if (riskScore < 50) {
-            // Reset alert tracker if risk drops
             lastAlertScore = 0
         }
     }

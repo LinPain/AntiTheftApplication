@@ -17,9 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.zerotrustauth.ThemeManager
 import com.example.zerotrustauth.ui.theme.*
-import androidx.compose.ui.platform.LocalContext
-import com.example.zerotrustauth.network.LocationApiService
-import com.example.zerotrustauth.network.VerifyOtpRequest
+import com.example.zerotrustauth.network.*
 import kotlinx.coroutines.launch
 
 @Composable
@@ -31,10 +29,18 @@ fun RegisterMFAScreen(
     var otpCode by remember { mutableStateOf("") }
     var isVerifying by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var resendCooldown by remember { mutableIntStateOf(0) }
     
     val isDarkMode = ThemeManager.isDarkTheme.value
     val scope = rememberCoroutineScope()
     val apiService = remember { LocationApiService.create() }
+
+    LaunchedEffect(resendCooldown) {
+        if (resendCooldown > 0) {
+            kotlinx.coroutines.delay(1000L)
+            resendCooldown--
+        }
+    }
 
     val backgroundGradient = if (isDarkMode) {
         Brush.verticalGradient(
@@ -65,7 +71,7 @@ fun RegisterMFAScreen(
                 ) {
                     Text(text = "✉️", fontSize = 64.sp)
                     Text(
-                        text = "XÁC MINH EMAIL",
+                        text = "XÁC MINH ĐĂNG KÝ",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = if (isDarkMode) Color.White else Color.Black
@@ -103,7 +109,35 @@ fun RegisterMFAScreen(
                         enabled = !isVerifying
                     )
 
-                    Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    TextButton(
+                        onClick = {
+                            if (resendCooldown == 0) {
+                                scope.launch {
+                                    try {
+                                        val resp = apiService.resendOtp(ResendOtpRequest(username, "REGISTRATION"))
+                                        if (resp.mockCode != null) {
+                                            android.util.Log.d("MFA", "DEBUG OTP: ${resp.mockCode}")
+                                        }
+                                        resendCooldown = 30
+                                        errorMessage = "Đã gửi lại mã!"
+                                    } catch (e: Exception) {
+                                        errorMessage = "Lỗi: ${e.message}"
+                                    }
+                                }
+                            }
+                        },
+                        enabled = resendCooldown == 0 && !isVerifying
+                    ) {
+                        Text(
+                            if (resendCooldown > 0) "Gửi lại sau ${resendCooldown}s" 
+                            else "Chưa nhận được mã? Gửi lại",
+                            color = if (isDarkMode) Color.Cyan else Color.Gray
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     Button(
                         onClick = {

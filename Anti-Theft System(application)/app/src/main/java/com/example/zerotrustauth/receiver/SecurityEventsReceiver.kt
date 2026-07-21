@@ -6,6 +6,9 @@ import android.content.Intent
 import android.os.Build
 import android.telephony.TelephonyManager
 import android.util.Log
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import com.example.zerotrustauth.data.SecurityPrefs
 import com.example.zerotrustauth.service.AlarmService
 import com.example.zerotrustauth.service.LocationService
@@ -21,8 +24,11 @@ class SecurityEventsReceiver : BroadcastReceiver() {
         val prefs = SecurityPrefs(context)
         
         when (intent.action) {
-            Intent.ACTION_BOOT_COMPLETED, "android.intent.action.SIM_STATE_CHANGED" -> {
-                Log.i("SecurityReceiver", "Device boot or SIM change detected. Initializing security services.")
+            Intent.ACTION_BOOT_COMPLETED, 
+            Intent.ACTION_LOCKED_BOOT_COMPLETED,
+            "android.intent.action.QUICKBOOT_POWERON",
+            "android.intent.action.SIM_STATE_CHANGED" -> {
+                Log.i("SecurityReceiver", "Device boot or SIM change detected (${intent.action}). Initializing security services.")
                 checkSimState(context, prefs)
                 startServicesIfLoggedIn(context, prefs)
             }
@@ -95,6 +101,15 @@ class SecurityEventsReceiver : BroadcastReceiver() {
 
     private fun startServiceForeground(context: Context, intent: Intent) {
         try {
+            // Check for background location permission if it's the LocationService
+            if (intent.component?.className == LocationService::class.java.name) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    Log.w("SecurityReceiver", "Skipping LocationService start: ACCESS_BACKGROUND_LOCATION not granted")
+                    return
+                }
+            }
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {

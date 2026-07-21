@@ -19,8 +19,7 @@ import com.example.zerotrustauth.ThemeManager
 import com.example.zerotrustauth.ui.theme.*
 import com.example.zerotrustauth.data.SecurityPrefs
 import androidx.compose.ui.platform.LocalContext
-import com.example.zerotrustauth.network.LocationApiService
-import com.example.zerotrustauth.network.VerifyOtpRequest
+import com.example.zerotrustauth.network.*
 import kotlinx.coroutines.launch
 
 @Composable
@@ -32,12 +31,20 @@ fun MFAScreen(
     var otpCode by remember { mutableStateOf("") }
     var isVerifying by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var resendCooldown by remember { mutableIntStateOf(0) }
     
     val context = LocalContext.current
     val securityPrefs = remember { SecurityPrefs(context) }
     val isDarkMode = ThemeManager.isDarkTheme.value
     val scope = rememberCoroutineScope()
     val apiService = remember { LocationApiService.create() }
+
+    LaunchedEffect(resendCooldown) {
+        if (resendCooldown > 0) {
+            kotlinx.coroutines.delay(1000L)
+            resendCooldown--
+        }
+    }
 
     val backgroundGradient = if (isDarkMode) {
         Brush.verticalGradient(
@@ -68,7 +75,7 @@ fun MFAScreen(
                 ) {
                     Text(text = "🛡️", fontSize = 64.sp)
                     Text(
-                        text = "XÁC THỰC 2 LỚP",
+                        text = "XÁC THỰC ĐĂNG NHẬP",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = if (isDarkMode) Color.White else Color.Black
@@ -106,7 +113,35 @@ fun MFAScreen(
                         enabled = !isVerifying
                     )
 
-                    Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    TextButton(
+                        onClick = {
+                            if (resendCooldown == 0) {
+                                scope.launch {
+                                    try {
+                                        val resp = apiService.resendOtp(ResendOtpRequest(username, "LOGIN"))
+                                        if (resp.mockCode != null) {
+                                            android.util.Log.d("MFA", "DEBUG OTP: ${resp.mockCode}")
+                                        }
+                                        resendCooldown = 30
+                                        errorMessage = "Đã gửi lại mã!"
+                                    } catch (e: Exception) {
+                                        errorMessage = "Lỗi: ${e.message}"
+                                    }
+                                }
+                            }
+                        },
+                        enabled = resendCooldown == 0 && !isVerifying
+                    ) {
+                        Text(
+                            if (resendCooldown > 0) "Gửi lại sau ${resendCooldown}s" 
+                            else "Chưa nhận được mã? Gửi lại",
+                            color = if (isDarkMode) Color.Cyan else Color.Gray
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     Button(
                         onClick = {
@@ -115,15 +150,12 @@ fun MFAScreen(
                                 scope.launch {
                                     try {
                                         val response = apiService.verifyOtp(VerifyOtpRequest(username, otpCode))
-                                        
-                                        // Save token and username for multi-account support
                                         securityPrefs.saveAuthData(response.token, username)
-
                                         isVerifying = false
                                         onVerifySuccess()
                                     } catch (e: Exception) {
                                         isVerifying = false
-                                        errorMessage = "Xác thực lỗi: ${e.message}"
+                                        errorMessage = "Lỗi: ${e.message}"
                                     }
                                 }
                             }

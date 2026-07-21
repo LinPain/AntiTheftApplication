@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.zerotrustauth.data.SecurityPrefs
 import androidx.compose.runtime.collectAsState
+import com.example.zerotrustauth.logic.LocationHelper
 import com.example.zerotrustauth.network.LocationApiService
 import com.example.zerotrustauth.network.LocationResponse
 import java.time.ZonedDateTime
@@ -32,12 +33,13 @@ fun LocationHistoryScreen(
     val authToken = securityPrefs.authToken.collectAsState(initial = null).value
 
     val apiService = remember(authToken) { LocationApiService.create(authToken) }
+    val locationHelper = remember { LocationHelper(context) }
     var history by remember { mutableStateOf<List<LocationResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
     LaunchedEffect(username) {
         try {
-            history = apiService.getLocationHistory(username, "android_device_1")
+            history = apiService.getLocationHistory(username, locationHelper.getDeviceId())
         } catch (e: Exception) {
             e.printStackTrace()
         } finally {

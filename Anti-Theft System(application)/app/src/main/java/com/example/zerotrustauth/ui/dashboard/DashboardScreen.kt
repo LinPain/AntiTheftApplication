@@ -39,6 +39,8 @@ import com.example.zerotrustauth.receiver.SecurityAdminReceiver
 import com.example.zerotrustauth.logic.RiskEngine
 import com.example.zerotrustauth.logic.SecurityLevel
 import com.example.zerotrustauth.logic.PermissionHelper
+import com.example.zerotrustauth.logic.LocationHelper
+import com.example.zerotrustauth.ui.login.PinSetupDialog
 import com.example.zerotrustauth.service.LocationService
 import com.example.zerotrustauth.service.AlarmService
 import android.os.Build
@@ -59,35 +61,20 @@ fun DashboardScreen(
     val authToken = securityPrefs.authToken.collectAsState(initial = null).value
     val failedUnlockCount = securityPrefs.failedUnlockCount.collectAsState(initial = 0).value
     val isDeviceTrusted = securityPrefs.isDeviceTrusted.collectAsState(initial = false).value
-    val safeLat = securityPrefs.safeZoneLat.collectAsState(initial = null).value
-    val safeLon = securityPrefs.safeZoneLon.collectAsState(initial = null).value
-    val safeRadius = securityPrefs.safeZoneRadius.collectAsState(initial = 100f).value
+    val isOutsideSafeZone = securityPrefs.isOutsideSafeZone.collectAsState(initial = false).value
     val scope = rememberCoroutineScope()
+
+    val riskScore = RiskEngine.calculateRiskScore(
+        isTrustedDevice = isDeviceTrusted,
+        isOutsideSafeZone = isOutsideSafeZone,
+        failedUnlockAttempts = failedUnlockCount
+    )
+    val securityLevel = RiskEngine.getSecurityLevel(riskScore)
     
     val isDarkMode = ThemeManager.isDarkTheme.value
     val apiService = remember(authToken) { LocationApiService.create(authToken) }
     var recentActivities by remember { mutableStateOf<List<LocationResponse>>(emptyList()) }
-
-    var isKnownLocation by remember { mutableStateOf(true) }
-
-    // Geofence Evaluation for Dashboard
-    LaunchedEffect(recentActivities, safeLat, safeLon) {
-        val lastLoc = recentActivities.firstOrNull()
-        if (lastLoc != null && safeLat != null && safeLon != null) {
-            val results = FloatArray(1)
-            android.location.Location.distanceBetween(lastLoc.latitude, lastLoc.longitude, safeLat, safeLon, results)
-            isKnownLocation = results[0] <= safeRadius
-        } else {
-            isKnownLocation = true // Assume safe if not set
-        }
-    }
-
-    val riskScore = RiskEngine.calculateRiskScore(
-        isTrustedDevice = isDeviceTrusted,
-        isKnownLocation = isKnownLocation,
-        failedUnlockAttempts = failedUnlockCount
-    )
-    val securityLevel = RiskEngine.getSecurityLevel(riskScore)
+    var showPinChangeDialog by remember { mutableStateOf(false) }
 
     // Device Admin Status
     val dpm = remember { context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager }
@@ -95,7 +82,6 @@ fun DashboardScreen(
     var isAdminActive by remember { mutableStateOf(dpm.isAdminActive(adminComponent)) }
 
     LaunchedEffect(Unit) {
-        // Refresh admin status when screen opens
         isAdminActive = dpm.isAdminActive(adminComponent)
     }
 
@@ -118,8 +104,8 @@ fun DashboardScreen(
         }
 
         try {
-            // Fetch only top 3 for the dashboard
-            recentActivities = apiService.getLocationHistory(username, "android_device_1").take(3)
+            val locationHelper = LocationHelper(context)
+            recentActivities = apiService.getLocationHistory(username, locationHelper.getDeviceId()).take(3)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -151,6 +137,8 @@ fun DashboardScreen(
                             securityPrefs.setLiveTracking(false)
                             context.stopService(Intent(context, LocationService::class.java))
                             context.stopService(Intent(context, AlarmService::class.java))
+                            securityPrefs.setRememberMe(false)
+                            securityPrefs.setLocalPin(null)
                             securityPrefs.clearAuthData()
                             onLogout()
                         }
@@ -215,7 +203,7 @@ fun DashboardScreen(
                                 title = "Xác thực",
                                 icon = Icons.Default.Fingerprint,
                                 color = Color(0xFF3B82F6),
-                                modifier = Modifier.weight(1.0f).clickable { /* MFA Info */ },
+                                modifier = Modifier.weight(1.0f).clickable { showPinChangeDialog = true },
                                 isDarkMode = isDarkMode
                             )
                             ServiceCard(
@@ -285,6 +273,20 @@ fun DashboardScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
+        }
+
+        if (showPinChangeDialog) {
+            PinSetupDialog(
+                title = "Đổi mã PIN bảo mật",
+                onDismiss = { showPinChangeDialog = false },
+                onPinSet = { newPin ->
+                    scope.launch {
+                        securityPrefs.setLocalPin(newPin)
+                        showPinChangeDialog = false
+                        android.widget.Toast.makeText(context, "Đã cập nhật mã PIN thành công!", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
         }
     }
 }

@@ -26,6 +26,9 @@ class SecurityPrefs(private val context: Context) {
         val IS_LOST_MODE_ACTIVE = booleanPreferencesKey("is_lost_mode_active")
         val LOST_MODE_MESSAGE = stringPreferencesKey("lost_mode_message")
         val LOST_MODE_PHONE = stringPreferencesKey("lost_mode_phone")
+        val IS_OUTSIDE_SAFE_ZONE = booleanPreferencesKey("is_outside_safe_zone")
+        val REMEMBER_ME = booleanPreferencesKey("remember_me")
+        val LOCAL_PIN = stringPreferencesKey("local_pin")
     }
 
     val lastSimId: Flow<String?> = context.dataStore.data.map { it[LAST_SIM_ID] }
@@ -42,6 +45,24 @@ class SecurityPrefs(private val context: Context) {
     val isLostModeActive: Flow<Boolean> = context.dataStore.data.map { it[IS_LOST_MODE_ACTIVE] ?: false }
     val lostModeMessage: Flow<String> = context.dataStore.data.map { it[LOST_MODE_MESSAGE] ?: "THIS DEVICE IS LOST" }
     val lostModePhone: Flow<String> = context.dataStore.data.map { it[LOST_MODE_PHONE] ?: "" }
+    val isOutsideSafeZone: Flow<Boolean> = context.dataStore.data.map { it[IS_OUTSIDE_SAFE_ZONE] ?: false }
+    val isRememberMeEnabled: Flow<Boolean> = context.dataStore.data.map { it[REMEMBER_ME] ?: false }
+    val localPin: Flow<String?> = context.dataStore.data.map { it[LOCAL_PIN] }
+
+    suspend fun setRememberMe(enabled: Boolean) {
+        context.dataStore.edit { it[REMEMBER_ME] = enabled }
+    }
+
+    suspend fun setLocalPin(pin: String?) {
+        context.dataStore.edit {
+            if (pin == null) it.remove(LOCAL_PIN)
+            else it[LOCAL_PIN] = pin
+        }
+    }
+
+    suspend fun setOutsideSafeZone(isOutside: Boolean) {
+        context.dataStore.edit { it[IS_OUTSIDE_SAFE_ZONE] = isOutside }
+    }
 
     suspend fun setLostMode(active: Boolean, message: String? = null, phone: String? = null) {
         context.dataStore.edit {

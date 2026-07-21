@@ -161,7 +161,13 @@ fun RegisterScreen(
                                     isRegistering = true
                                     scope.launch {
                                         try {
-                                            val response = apiService.register(RegisterRequest(username, email, password))
+                                            val response = apiService.register(
+                                                RegisterRequest(
+                                                    username.trim().lowercase(), 
+                                                    email.trim().lowercase(), 
+                                                    password
+                                                )
+                                            )
                                             isRegistering = false
                                             if (response.verificationRequired) {
                                                 onNavigateToVerification(username)

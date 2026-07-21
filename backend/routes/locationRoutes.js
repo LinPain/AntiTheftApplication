@@ -37,8 +37,9 @@ router.post('/', async (req, res) => {
         // Emit real-time update via Socket.io
         const io = req.app.get('io');
         if (io) {
-            console.log(`[SOCKET] Broadcasting update to room: ${username}`);
-            io.to(username).emit('locationUpdate', {
+            const room = username.toLowerCase().trim();
+            console.log(`[SOCKET] Broadcasting update to room: ${room}`);
+            io.to(room).emit('locationUpdate', {
                 deviceId,
                 latitude,
                 longitude,
@@ -49,6 +50,37 @@ router.post('/', async (req, res) => {
         res.status(201).json({ message: 'Location saved successfully' });
     } catch (error) {
         console.error(`[ERROR] Failed to save location for ${req.params.username}:`, error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /api/:username/location/devices/list - List unique devices for a user
+router.get('/devices/list', async (req, res) => {
+    try {
+        const username = req.username;
+        const devices = await Location.distinct('deviceId', { username });
+        res.status(200).json(devices);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /api/:username/location/devices/status - List devices with last known info
+router.get('/devices/status', async (req, res) => {
+    try {
+        const username = req.username;
+        const devices = await Location.aggregate([
+            { $match: { username } },
+            { $sort: { timestamp: -1 } },
+            { $group: {
+                _id: "$deviceId",
+                lastLatitude: { $first: "$latitude" },
+                lastLongitude: { $first: "$longitude" },
+                lastTimestamp: { $first: "$timestamp" }
+            }}
+        ]);
+        res.status(200).json(devices);
+    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });

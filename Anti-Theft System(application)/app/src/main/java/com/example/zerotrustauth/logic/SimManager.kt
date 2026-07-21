@@ -18,17 +18,17 @@ object SimManager {
         val prefs = SecurityPrefs(context)
         val username = prefs.username.first() ?: return
         
-        Log.w("SimManager", "SIM CHANGE DETECTED! Operator: \$newOperator")
+        Log.w("SimManager", "SIM CHANGE DETECTED! Operator: $newOperator")
 
         // 1. Trigger Immediate Location Upload
-        LocationService.triggerImmediateUpload()
+        LocationService.triggerImmediateUpload(context)
 
         // 2. Notify Backend (Email)
         try {
             val apiService = LocationApiService.create()
             apiService.notifySimAlert(SimAlertRequest(username, newOperator))
         } catch (e: Exception) {
-            Log.e("SimManager", "Failed to send SIM alert: \${e.message}")
+            Log.e("SimManager", "Failed to send SIM alert: ${e.message}")
         }
 
         // 3. Show Local Alert Notification
@@ -46,7 +46,7 @@ object SimManager {
 
         val notification = NotificationCompat.Builder(context, channelId)
             .setContentTitle("⚠️ CẢNH BÁO THAY ĐỔI SIM")
-            .setContentText("Phát hiện thẻ SIM mới: \$operator. Vị trí đã được tải lên.")
+            .setContentText("Phát hiện thẻ SIM mới: $operator. Vĩ độ/Kinh độ đã được tải lên.")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)

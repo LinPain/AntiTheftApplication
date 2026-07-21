@@ -104,7 +104,7 @@ fun LostModeScreen(
         if (phoneNumber.isNotEmpty()) {
             Button(
                 onClick = {
-                    val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:\$phoneNumber"))
+                    val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phoneNumber"))
                     context.startActivity(intent)
                 },
                 modifier = Modifier
