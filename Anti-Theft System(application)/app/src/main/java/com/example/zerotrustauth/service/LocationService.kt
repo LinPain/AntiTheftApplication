@@ -18,13 +18,12 @@ import com.google.android.gms.location.*
 import com.example.zerotrustauth.data.SecurityPrefs
 import com.example.zerotrustauth.logic.LocationHelper
 import androidx.lifecycle.LifecycleService
-import com.example.zerotrustauth.logic.CameraHelper
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 
 /**
  * Optimized Location Service
- * Purely handles GPS capture and geofencing. 
+ * Purely handles GPS capture and geofencing without local noise.
  */
 class LocationService : LifecycleService() {
 
@@ -37,18 +36,11 @@ class LocationService : LifecycleService() {
 
     companion object {
         private const val NOTIFICATION_ID = 1234
-        private const val CHANNEL_ID = "location_channel"
+        private const val CHANNEL_ID = "location_channel_silent"
         var isRunning = false
         
         private var instance: LocationService? = null
         
-        fun triggerIntruderCapture() {
-            instance?.let { 
-                Log.i("LocationService", "Triggering intruder capture")
-                CameraHelper.captureAndUpload(it, it) 
-            }
-        }
-
         /**
          * Wake up tracking and upload location immediately
          */
@@ -92,6 +84,14 @@ class LocationService : LifecycleService() {
         super.onStartCommand(intent, flags, startId)
         if (!isTrackingUpdatesActive) {
             startLocationUpdates()
+            // Send initial discovery pulse
+            scope.launch {
+                val token = prefs.authToken.first()
+                val username = prefs.username.first()
+                if (username != null && username != "guest" && token != null) {
+                    sendImmediateLocation(LocationApiService.create(token), username)
+                }
+            }
         }
         return START_STICKY
     }
@@ -100,9 +100,12 @@ class LocationService : LifecycleService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Real-time Location Tracking",
-                NotificationManager.IMPORTANCE_LOW
-            )
+                "Hệ thống Bảo mật",
+                NotificationManager.IMPORTANCE_MIN
+            ).apply {
+                description = "Giám sát bảo mật thiết bị"
+                setShowBadge(false)
+            }
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
         }
@@ -131,9 +134,9 @@ class LocationService : LifecycleService() {
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
-                for (location in locationResult.locations) {
+                // Only process the last location to save battery and network
+                locationResult.lastLocation?.let { location ->
                     sendLocationToBackend(location.latitude, location.longitude)
-                    updateNotification(location.latitude, location.longitude)
                     checkGeofence(location.latitude, location.longitude)
                 }
             }
@@ -146,11 +149,12 @@ class LocationService : LifecycleService() {
         )
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Đang theo dõi vị trí")
-            .setContentText("Hệ thống Zero Trust đang chạy ngầm")
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentTitle("Thiết bị đang được bảo vệ")
+            .setContentText("Hệ thống Zero Trust đang hoạt động")
+            .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
+            .setSilent(true)
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -172,27 +176,16 @@ class LocationService : LifecycleService() {
                 android.location.Location.distanceBetween(lat, lon, safeLat, safeLon, results)
                 val isOutside = results[0] > radius
                 
-                // Set the real geofence flag instead of incrementing failed PINs
-                prefs.setOutsideSafeZone(isOutside)
+                val currentlyOutside = prefs.isOutsideSafeZone.first()
+                if (isOutside != currentlyOutside) {
+                    prefs.setOutsideSafeZone(isOutside)
+                }
                 
                 if (isOutside) {
                     Log.w("LocationService", "OUTSIDE SAFE ZONE! Dist: ${results[0]}m")
                 }
             }
         }
-    }
-
-    private fun updateNotification(lat: Double, lon: Double) {
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("📍 Vị trí đã cập nhật")
-            .setContentText("Gửi lúc $time: $lat, $lon")
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
-            .build()
-        notificationManager.notify(NOTIFICATION_ID, notification)
     }
 
     private fun sendLocationToBackend(lat: Double, lon: Double) {
@@ -204,7 +197,12 @@ class LocationService : LifecycleService() {
                 
                 LocationApiService.create(token).sendLocation(
                     username = username,
-                    location = NetworkLocationRequest(locationHelper.getDeviceId(), lat, lon)
+                    location = NetworkLocationRequest(
+                        deviceId = locationHelper.getDeviceId(),
+                        deviceName = locationHelper.getDeviceName(),
+                        latitude = lat,
+                        longitude = lon
+                    )
                 )
                 Log.d("LocationService", "GPS Upload success: $lat, $lon")
             } catch (e: Exception) {
@@ -220,7 +218,12 @@ class LocationService : LifecycleService() {
                     try {
                         apiService.sendLocation(
                             username = username,
-                            location = NetworkLocationRequest(locationHelper.getDeviceId(), it.latitude, it.longitude)
+                            location = NetworkLocationRequest(
+                                deviceId = locationHelper.getDeviceId(),
+                                deviceName = locationHelper.getDeviceName(),
+                                latitude = it.latitude,
+                                longitude = it.longitude
+                            )
                         )
                         Log.d("LocationService", "Immediate GPS pulse success")
                     } catch (e: Exception) {
@@ -235,7 +238,9 @@ class LocationService : LifecycleService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        fusedLocationClient.removeLocationUpdates(locationCallback)
+        if (::locationCallback.isInitialized) {
+            fusedLocationClient.removeLocationUpdates(locationCallback)
+        }
         scope.cancel()
         isRunning = false
         isTrackingUpdatesActive = false

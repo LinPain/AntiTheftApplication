@@ -52,6 +52,11 @@
             background: #3b82f6; color: white; border-radius: 4px;
             border: none; cursor: pointer;
         }
+        .btn-delete {
+            margin-top: 5px; margin-left: 5px; padding: 4px 8px; font-size: 0.75em;
+            background: #EF4444; color: white; border-radius: 4px;
+            border: none; cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -237,28 +242,43 @@
 
                     devices.forEach(dev => {
                         const devId = dev._id;
+                        const devName = dev.deviceName || devId;
 
                         // Add to dropdown
                         const opt = document.createElement('option');
                         opt.value = devId;
-                        opt.innerText = devId;
+                        opt.innerText = devName;
                         deviceSelector.appendChild(opt);
 
-                        // Add to list
-                        const item = document.createElement('div');
-                        item.className = 'device-item';
-                        item.innerHTML = `
-                            <span class="device-name">${devId}</span>
-                            <span class="device-time">Cập nhật: ${new Date(dev.lastTimestamp).toLocaleString()}</span>
-                            <button class="btn-focus" onclick="focusDevice('${devId}')">XEM TRÊN BẢN ĐỒ</button>
-                        `;
-                        listContainer.appendChild(item);
+                        // Add/Update in List UI
+                        createOrUpdateDeviceListItem(devId, devName, dev.lastTimestamp);
 
                         // Update marker
-                        updateMarker(devId, dev.lastLatitude, dev.lastLongitude);
+                        updateMarker(devId, devName, dev.lastLatitude, dev.lastLongitude);
                     });
                 }
             } catch (e) { console.error("Failed to fetch devices", e); }
+        }
+
+        function createOrUpdateDeviceListItem(devId, devName, timestamp) {
+            const listContainer = document.getElementById('device-list');
+            let item = document.getElementById(`list-item-${devId}`);
+
+            if (!item) {
+                item = document.createElement('div');
+                item.id = `list-item-${devId}`;
+                item.className = 'device-item';
+                listContainer.appendChild(item);
+            }
+
+            item.innerHTML = `
+                <span class="device-name">${devName}</span>
+                <span class="device-time">Cập nhật: ${new Date(timestamp).toLocaleString()}</span>
+                <div style="display: flex;">
+                    <button class="btn-focus" onclick="focusDevice('${devId}')">XEM TRÊN BẢN ĐỒ</button>
+                    <button class="btn-delete" onclick="deleteDevice('${devId}')">GỠ BỎ</button>
+                </div>
+            `;
         }
 
         window.focusDevice = (devId) => {
@@ -270,24 +290,56 @@
             }
         };
 
+        window.deleteDevice = async (devId) => {
+            if (!confirm(`Bạn có chắc muốn gỡ thiết bị ${devId} và xóa toàn bộ lịch sử?`)) return;
+            const res = await secureCall(`/api/${activeUser}/location/${devId}`, 'DELETE');
+            if (res.ok) {
+                // Remove marker from map
+                if (markers[devId]) {
+                    map.removeLayer(markers[devId]);
+                    delete markers[devId];
+                }
+                fetchDevices();
+            } else {
+                alert("Lỗi khi gỡ thiết bị.");
+            }
+        };
+
         function initSocket() {
-            socket = io({ auth: { token }, extraHeaders: { "ngrok-skip-browser-warning": "true" } });
+            socket = io({
+                auth: { token },
+                extraHeaders: { "ngrok-skip-browser-warning": "true" },
+                transports: ['websocket', 'polling'] // Ensure compatibility
+            });
+
             socket.on('connect', () => {
-                console.log("Socket connected to room:", activeUser.toLowerCase());
+                console.log("✅ Socket connected to room:", activeUser.toLowerCase());
                 socket.emit('join', activeUser.toLowerCase());
             });
+
+            socket.on('connect_error', (err) => {
+                console.error("❌ Socket Connection Error:", err.message);
+            });
+
             socket.on('locationUpdate', (d) => {
-                console.log(`📍 Location Received from ${d.deviceId}:`, d.latitude, d.longitude);
-                updateMarker(d.deviceId, d.latitude, d.longitude);
+                const displayName = d.deviceName || d.deviceId;
+                console.log(`📍 Real-time Location Received from ${displayName}:`, d.latitude, d.longitude);
+
+                // Update Marker on Map
+                updateMarker(d.deviceId, displayName, d.latitude, d.longitude);
+
+                // Update text list on the right
+                createOrUpdateDeviceListItem(d.deviceId, displayName, d.timestamp || Date.now());
 
                 // Add to selector if new
                 if (![...deviceSelector.options].some(o => o.value === d.deviceId)) {
                     const opt = document.createElement('option');
                     opt.value = d.deviceId;
-                    opt.innerText = d.deviceId;
+                    opt.innerText = displayName;
                     deviceSelector.appendChild(opt);
                 }
             });
+
             socket.on('statusUpdate', () => {
                 console.log("🔄 Status Update Received");
                 updateStatus();
@@ -305,15 +357,21 @@
             }
         }
 
-        function updateMarker(deviceId, lat, lon) {
+        function updateMarker(deviceId, deviceName, lat, lon) {
+            if (!lat || !lon) return;
+
+            const label = deviceName || deviceId;
+
             if(!markers[deviceId]) {
-                markers[deviceId] = L.marker([lat, lon]).addTo(map).bindPopup(`<b>Device:</b> ${deviceId}`);
+                markers[deviceId] = L.marker([lat, lon]).addTo(map).bindPopup(`<b>Device:</b> ${label}`);
             } else {
                 markers[deviceId] = markers[deviceId].setLatLng([lat, lon]);
+                markers[deviceId].getPopup().setContent(`<b>Device:</b> ${label}`);
             }
 
-            if (selectedDeviceId === 'all' || selectedDeviceId === deviceId) {
-                map.panTo([lat, lon]);
+            // Auto-focus logic: Only jump if a specific device is selected
+            if (selectedDeviceId === deviceId) {
+                map.setView([lat, lon], map.getZoom());
             }
         }
 

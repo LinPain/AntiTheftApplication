@@ -26,33 +26,52 @@ function MapView() {
       }).addTo(mapInstance.current);
     }
 
-    const token = localStorage.getItem("token");
-    const activeUser = localStorage.getItem("activeUser");
+    const storedUser = JSON.parse(localStorage.getItem("sat_current_user") || "{}");
+    const token = storedUser.token;
+    const activeUser = storedUser.username;
 
     if (token && activeUser && window.io) {
+      const apiBase = process.env.REACT_APP_API_BASE || "";
       // Initialize Socket.io
-      socketInstance.current = window.io("/", {
+      socketInstance.current = window.io(apiBase, {
         auth: { token },
-        extraHeaders: { "ngrok-skip-browser-warning": "true" }
+        extraHeaders: { "ngrok-skip-browser-warning": "true" },
+        reconnection: true,
+        reconnectionAttempts: 5
       });
 
       socketInstance.current.on("connect", () => {
+        console.log("Socket connected, joining room:", activeUser);
         socketInstance.current.emit("join", activeUser.toLowerCase());
+
+        // Final Hardening: Request a track update immediately upon map load to ensure we have a fresh location
+        fetch(`${apiBase}/api/${activeUser}/track`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "ngrok-skip-browser-warning": "true",
+            "Content-Type": "application/json"
+          }
+        }).catch(err => console.error("Auto-track request failed:", err));
       });
 
       socketInstance.current.on("locationUpdate", (data) => {
+        if (!data || !data.deviceId) return;
         const pos = [data.latitude, data.longitude];
+        const devName = data.deviceName || data.deviceId;
 
         if (!markers.current[data.deviceId] && window.L) {
           markers.current[data.deviceId] = window.L.marker(pos)
             .addTo(mapInstance.current)
-            .bindPopup(`<b>Device:</b> ${data.deviceId}`);
+            .bindPopup(`<b>Device:</b> ${devName}`);
 
           setDeviceList(prev => prev.includes(data.deviceId) ? prev : [...prev, data.deviceId]);
         } else if (markers.current[data.deviceId]) {
           markers.current[data.deviceId].setLatLng(pos);
+          markers.current[data.deviceId].setPopupContent(`<b>Device:</b> ${devName}`);
         }
 
+        // Auto-center only if current selection is 'all' or this specific device
         if (selectedDevice === "all" || selectedDevice === data.deviceId) {
           mapInstance.current.panTo(pos);
         }
@@ -60,8 +79,12 @@ function MapView() {
         setLastUpdate(new Date().toLocaleTimeString());
       });
 
+      socketInstance.current.on("connect_error", (err) => {
+        console.error("Socket connection error:", err.message);
+      });
+
       // Fetch all devices for this user
-      fetch(`/api/${activeUser}/location/devices/status`, {
+      fetch(`${apiBase}/api/${activeUser}/location/devices/status`, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "ngrok-skip-browser-warning": "true"
@@ -69,17 +92,21 @@ function MapView() {
       })
       .then(res => res.json())
       .then(list => {
+        if (!Array.isArray(list)) return;
         const ids = list.map(d => d._id);
         setDeviceList(ids);
 
         list.forEach(dev => {
           const pos = [dev.lastLatitude, dev.lastLongitude];
+          const devName = dev.deviceName || dev._id;
+
           if (!markers.current[dev._id] && window.L) {
             markers.current[dev._id] = window.L.marker(pos)
               .addTo(mapInstance.current)
-              .bindPopup(`<b>Device:</b> ${dev._id}`);
+              .bindPopup(`<b>Device:</b> ${devName}`);
           } else if (markers.current[dev._id]) {
             markers.current[dev._id].setLatLng(pos);
+            markers.current[dev._id].setPopupContent(`<b>Device:</b> ${devName}`);
           }
         });
 
@@ -87,7 +114,8 @@ function MapView() {
         if (selectedDevice === "all" && list.length > 0) {
           mapInstance.current.setView([list[0].lastLatitude, list[0].lastLongitude], 15);
         }
-      });
+      })
+      .catch(err => console.error("Initial device fetch failed:", err));
     }
 
     return () => {

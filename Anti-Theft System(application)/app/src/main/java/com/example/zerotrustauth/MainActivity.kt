@@ -1,12 +1,12 @@
 package com.example.zerotrustauth
 
 import android.os.Bundle
-import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
 import android.content.Intent
 import android.provider.Settings
 import android.net.Uri
+import android.widget.Toast
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -42,147 +42,184 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.*
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
+import com.example.zerotrustauth.receiver.SecurityAdminReceiver
 
 class MainActivity : FragmentActivity() {
     
-    private var isAppVisible = false
-    private val showPermissionRationale = mutableStateOf(false)
-    private val currentPermissionIndex = mutableIntStateOf(0)
+    private var isAppVisible = mutableStateOf(false)
+    private var currentPermissionToExplain = mutableStateOf<PermissionInfo?>(null)
 
-    private val permissionsToRequest = mutableListOf<PermissionInfo>()
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        // Use a local copy of index to avoid race conditions if needed, 
-        // but here we just increment and check bounds safely.
-        val nextIndex = currentPermissionIndex.intValue + 1
-        if (nextIndex < permissionsToRequest.size) {
-            currentPermissionIndex.intValue = nextIndex
-            showPermissionRationale.value = true
-        } else {
-            // Finished current batch
-            if (permissions.containsKey(Manifest.permission.ACCESS_FINE_LOCATION) && permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    checkBackgroundLocation()
-                } else {
-                    startSecurityServices()
-                }
-            } else {
-                startSecurityServices()
-            }
-        }
+    ) { _ ->
+        findNextMissingPermission()
     }
 
     private val requestBackgroundLocationLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { _ -> }
+    ) { _ ->
+        findNextMissingPermission()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        if (!Settings.canDrawOverlays(this)) {
-            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
-            startActivity(intent)
-        }
-
         setContent {
             AntiTheftSystemTheme(darkTheme = ThemeManager.isDarkTheme.value) {
                 Surface(color = MaterialTheme.colorScheme.background) {
                     AppNavigation()
-                    if (showPermissionRationale.value) {
-                        PermissionRationaleDialog()
+                    
+                    val permission = currentPermissionToExplain.value
+                    if (permission != null && isAppVisible.value) {
+                        PermissionRationaleDialog(permission)
                     }
                 }
             }
 
-            LaunchedEffect(Unit) {
-                checkPermissions()
+            LaunchedEffect(isAppVisible.value) {
+                if (isAppVisible.value) {
+                    delay(1500) // Initial stability delay
+                    findNextMissingPermission()
+                }
             }
         }
     }
 
-    private fun checkPermissions() {
-        val list = mutableListOf<PermissionInfo>()
-        
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            list.add(PermissionInfo(
-                title = "Vị trí chính xác",
-                description = "Cần thiết để theo dõi thiết bị thời gian thực và thiết lập vùng an toàn (Geofencing).",
-                permissions = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-            ))
-        }
-        
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            list.add(PermissionInfo(
-                title = "Máy ảnh",
-                description = "Sử dụng để chụp ảnh kẻ xâm nhập khi có nỗ lực mở khoá trái phép.",
-                permissions = arrayOf(Manifest.permission.CAMERA)
-            ))
-        }
+    private fun findNextMissingPermission() {
+        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val adminComponent = ComponentName(this, SecurityAdminReceiver::class.java)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                list.add(PermissionInfo(
-                    title = "Thông báo",
-                    description = "Để gửi cảnh báo bảo mật khẩn cấp và trạng thái hệ thống cho bạn.",
-                    permissions = arrayOf(Manifest.permission.POST_NOTIFICATIONS)
-                ))
+        when {
+            // 2. Overlay Permission
+            !Settings.canDrawOverlays(this) -> {
+                currentPermissionToExplain.value = PermissionInfo(
+                    title = "Hiển thị trên ứng dụng khác",
+                    description = "Cần thiết để hệ thống có thể hiển thị màn hình khoá chống trộm ngay lập tức khi phát hiện rủi ro.",
+                    permissions = emptyArray(),
+                    isOverlay = true
+                )
             }
-        }
 
-        if (list.isNotEmpty()) {
-            permissionsToRequest.clear()
-            permissionsToRequest.addAll(list)
-            currentPermissionIndex.intValue = 0
-            showPermissionRationale.value = true
-        } else {
-            // All initial permissions granted, check background location if needed
-            checkBackgroundLocation()
-            startSecurityServices()
-        }
-    }
+            // 3. Foreground Location
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED -> {
+                currentPermissionToExplain.value = PermissionInfo(
+                    title = "Vị trí chính xác",
+                    description = "Cần thiết để theo dõi thiết bị thời gian thực và thiết lập vùng an toàn.",
+                    permissions = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                )
+            }
 
-    private fun checkBackgroundLocation() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            
-            // This is usually requested separately after fine location
-            permissionsToRequest.clear()
-            permissionsToRequest.add(PermissionInfo(
-                title = "Vị trí chạy ngầm",
-                description = "Cho phép ứng dụng bảo vệ thiết bị ngay cả khi bạn không mở ứng dụng.",
-                permissions = arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-            ))
-            currentPermissionIndex.intValue = 0
-            showPermissionRationale.value = true
+            // 5. Device Admin
+            !dpm.isAdminActive(adminComponent) -> {
+                currentPermissionToExplain.value = PermissionInfo(
+                    title = "Bảo vệ mã PIN",
+                    description = "Kích hoạt quyền Quản trị viên thiết bị để app có thể phát hiện khi kẻ trộm nhập sai mã PIN màn hình khoá.",
+                    permissions = emptyArray(),
+                    isDeviceAdmin = true
+                )
+            }
+
+            // 6. Background Location
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED -> {
+                currentPermissionToExplain.value = PermissionInfo(
+                    title = "Vị trí chạy ngầm",
+                    description = "Quan trọng: Để bảo vệ thiết bị liên tục, vui lòng chọn 'Luôn cho phép' trong phần cài đặt vị trí.",
+                    permissions = arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION),
+                    isBackgroundLocation = true
+                )
+            }
+
+            else -> {
+                currentPermissionToExplain.value = null
+                startSecurityServices()
+            }
         }
     }
 
     @Composable
-    private fun PermissionRationaleDialog() {
-        val index = currentPermissionIndex.intValue
-        if (index < 0 || index >= permissionsToRequest.size) {
-            showPermissionRationale.value = false
-            return
-        }
-        val current = permissionsToRequest[index]
-
+    private fun PermissionRationaleDialog(permission: PermissionInfo) {
         AlertDialog(
-            onDismissRequest = { showPermissionRationale.value = false },
-            title = { Text(current.title, fontWeight = FontWeight.Bold) },
-            text = { Text(current.description) },
+            onDismissRequest = { },
+            title = { Text(permission.title, fontWeight = FontWeight.Bold) },
+            text = { Text(permission.description) },
             confirmButton = {
                 Button(onClick = {
-                    showPermissionRationale.value = false
-                    requestPermissionLauncher.launch(current.permissions)
+                    currentPermissionToExplain.value = null // Hide dialog first
+                    
+                    lifecycleScope.launch {
+                        delay(500) // UI settling delay
+                        try {
+                            when {
+                                permission.isOverlay -> {
+                                    try {
+                                        val intent = Intent(
+                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            Uri.fromParts("package", packageName, null)
+                                        )
+                                        startActivity(intent)
+                                    } catch (e: Exception) {
+                                        // Fallback: Open general Overlay list
+                                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                                        Toast.makeText(this@MainActivity, "Vui lòng tìm và chọn App trong danh sách", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                                permission.isDeviceAdmin -> {
+                                    val adminComponent = ComponentName(this@MainActivity, SecurityAdminReceiver::class.java)
+                                    val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent)
+                                        putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, permission.description)
+                                    }
+                                    startActivity(intent)
+                                }
+                                permission.isBackgroundLocation && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                                    try {
+                                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = Uri.fromParts("package", packageName, null)
+                                        }
+                                        startActivity(intent)
+                                    } catch (e: Exception) {
+                                        // Fallback: Open general location settings
+                                        startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                                        Toast.makeText(this@MainActivity, "Vui lòng chọn 'Quyền' -> 'Vị trí' -> 'Luôn cho phép'", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                                permission.isBackgroundLocation -> {
+                                    requestBackgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                                }
+                                else -> {
+                                    requestPermissionLauncher.launch(permission.permissions)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            // Ultimate fallback: App Info page
+                            try {
+                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", packageName, null)
+                                }
+                                startActivity(intent)
+                            } catch (ex: Exception) {
+                                Toast.makeText(this@MainActivity, "Vui lòng cấp quyền thủ công trong Cài đặt", Toast.LENGTH_LONG).show()
+                            }
+                            findNextMissingPermission()
+                        }
+                    }
                 }) {
-                    Text("Đã hiểu & Cấp quyền")
+                    Text(if (permission.isBackgroundLocation && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R || permission.isOverlay) "Mở Cài đặt" else "Tiếp tục")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showPermissionRationale.value = false }) {
-                    Text("Để sau")
+                TextButton(onClick = { 
+                    currentPermissionToExplain.value = null
+                    lifecycleScope.launch {
+                        delay(1000) 
+                        findNextMissingPermission()
+                    }
+                }) {
+                    Text("Bỏ qua")
                 }
             }
         )
@@ -191,7 +228,10 @@ class MainActivity : FragmentActivity() {
     data class PermissionInfo(
         val title: String,
         val description: String,
-        val permissions: Array<String>
+        val permissions: Array<String>,
+        val isBackgroundLocation: Boolean = false,
+        val isDeviceAdmin: Boolean = false,
+        val isOverlay: Boolean = false
     )
 
     private fun startSecurityServices() {
@@ -215,12 +255,39 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
-        isAppVisible = true
+        isAppVisible.value = true
+        AppState.isAppInForeground.value = true
+        
+        // Re-enforce lock task if we are in lost mode or lockdown
+        val securityPrefs = SecurityPrefs(applicationContext)
+        lifecycleScope.launch {
+            val isRemoteLocked = securityPrefs.isRemoteLockdownActive.first()
+            val isLost = securityPrefs.isLostModeActive.first()
+            if (isRemoteLocked || isLost) {
+                try {
+                    // Force the window to stay on top even after reboots
+                    window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                                  android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                                  android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                                  android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+
+                    startLockTask()
+                } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "Failed to re-start lock task: ${e.message}")
+                }
+            }
+        }
+
+        // Re-check permissions when returning from settings or admin screens
+        if (currentPermissionToExplain.value == null) {
+            findNextMissingPermission()
+        }
     }
 
     override fun onPause() {
         super.onPause()
-        isAppVisible = false
+        isAppVisible.value = false
+        AppState.isAppInForeground.value = false
         enforceLockdown()
     }
 
@@ -229,13 +296,25 @@ class MainActivity : FragmentActivity() {
         if (!hasFocus) enforceLockdown()
     }
 
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        val securityPrefs = SecurityPrefs(applicationContext)
+        lifecycleScope.launch {
+            val isRemoteLocked = securityPrefs.isRemoteLockdownActive.first()
+            val isLost = securityPrefs.isLostModeActive.first()
+            if (isRemoteLocked || isLost) {
+                enforceLockdown()
+            }
+        }
+    }
+
     private fun enforceLockdown() {
         val securityPrefs = SecurityPrefs(applicationContext)
         lifecycleScope.launch(Dispatchers.Main) {
             val isRemoteLocked = securityPrefs.isRemoteLockdownActive.first()
             val isLost = securityPrefs.isLostModeActive.first()
 
-            if ((isRemoteLocked || isLost) && !isAppVisible) {
+            if ((isRemoteLocked || isLost) && !isAppVisible.value) {
                 delay(200L)
                 val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
@@ -253,8 +332,20 @@ fun AppNavigation() {
     val securityPrefs = remember { SecurityPrefs(context) }
     
     val failedUnlockCount = securityPrefs.failedUnlockCount.collectAsState(initial = 0).value
-    val isRemoteLocked = securityPrefs.isRemoteLockdownActive.collectAsState(initial = false).value
-    val isLostMode = securityPrefs.isLostModeActive.collectAsState(initial = false).value
+    val isRemoteLockedState = securityPrefs.isRemoteLockdownActive.collectAsState(initial = null)
+    val isLostModeState = securityPrefs.isLostModeActive.collectAsState(initial = null)
+    
+    val isRemoteLocked = isRemoteLockedState.value
+    val isLostMode = isLostModeState.value
+    
+    // Wait for initial values from DataStore to avoid race conditions/flicker
+    if (isRemoteLocked == null || isLostMode == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
     val lostMsg = securityPrefs.lostModeMessage.collectAsState(initial = "LOST").value
     val lostPhone = securityPrefs.lostModePhone.collectAsState(initial = "").value
     val isOutsideSafeZone = securityPrefs.isOutsideSafeZone.collectAsState(initial = false).value
@@ -280,33 +371,47 @@ fun AppNavigation() {
             }
 
             val target = if (isLostMode) "lost-mode" else "antitheft"
-            navController.navigate(target) { popUpTo(0) { inclusive = true } }
+            // Only navigate if we're not already on the target screen to avoid flickering
+            if (navController.currentDestination?.route != target) {
+                navController.navigate(target) { popUpTo(0) { inclusive = true } }
+            }
         } else {
             try {
                 (context as? ComponentActivity)?.stopLockTask()
             } catch (e: Exception) { }
+            
+            // If we were on a lock screen, navigate back to the secure entry (splash)
+            val currentRoute = navController.currentDestination?.route
+            if (currentRoute == "lost-mode" || currentRoute == "antitheft") {
+                navController.navigate("splash") { popUpTo(0) { inclusive = true } }
+            }
         }
     }
 
     NavHost(
         navController = navController,
-        startDestination = if ((securityLevel == SecurityLevel.CRITICAL || isRemoteLocked) && !isManuallyUnlocked) "antitheft" 
-                           else if (isLostMode) "lost-mode"
-                           else "splash"
+        startDestination = "splash"
     ) {
         composable("splash") {
-            var startDest by remember { mutableStateOf<String?>(null) }
-            LaunchedEffect(Unit) {
-                val isRemembered = securityPrefs.isRememberMeEnabled.first()
-                val hasPin = !securityPrefs.localPin.first().isNullOrBlank()
-                val hasToken = !securityPrefs.authToken.first().isNullOrBlank()
-                
-                startDest = if (isRemembered && hasPin && hasToken) "pin-entry" else "login"
+            LaunchedEffect(isRemoteLocked, isLostMode) {
+                // Determine destination as soon as data is ready
+                if (isRemoteLocked == true || securityLevel == SecurityLevel.CRITICAL) {
+                    navController.navigate("antitheft") { popUpTo(0) { inclusive = true } }
+                } else if (isLostMode == true) {
+                    navController.navigate("lost-mode") { popUpTo(0) { inclusive = true } }
+                } else {
+                    val isRemembered = securityPrefs.isRememberMeEnabled.first()
+                    val hasPin = !securityPrefs.localPin.first().isNullOrBlank()
+                    val hasToken = !securityPrefs.authToken.first().isNullOrBlank()
+                    
+                    val dest = if (isRemembered && hasPin && hasToken) "pin-entry" else "login"
+                    navController.navigate(dest) { popUpTo(0) { inclusive = true } }
+                }
             }
             
-            startDest?.let {
-                navController.navigate(it) { popUpTo("splash") { inclusive = true } }
-            } ?: Box(Modifier.fillMaxSize()) { CircularProgressIndicator(Modifier.align(Alignment.Center)) }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
         }
 
         composable("pin-entry") {
@@ -328,6 +433,8 @@ fun AppNavigation() {
             AntiTheftLockScreen(onUnlockSuccess = { 
                 isManuallyUnlocked = true
                 try { (context as? ComponentActivity)?.stopLockTask() } catch (e: Exception) { }
+                // Immediately navigate away upon successful manual unlock
+                navController.navigate("splash") { popUpTo(0) { inclusive = true } }
             })
         }
         composable("lockdown") { LockdownScreen(riskScore, {}) }

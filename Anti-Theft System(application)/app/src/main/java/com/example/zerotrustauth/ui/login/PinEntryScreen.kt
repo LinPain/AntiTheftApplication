@@ -26,6 +26,7 @@ fun PinEntryScreen(
     onFallback: () -> Unit
 ) {
     var pin by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val isDarkMode = ThemeManager.isDarkTheme.value
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -40,6 +41,23 @@ fun PinEntryScreen(
         Brush.verticalGradient(
             colors = listOf(Color(0xFFF8FAFC), Color(0xFFE2E8F0))
         )
+    }
+
+    val verifyPin = {
+        if (pin.length == 4) {
+            isLoading = true
+            scope.launch {
+                val storedPin = securityPrefs.localPin.first()
+                if (pin == storedPin) {
+                    val user = securityPrefs.username.first() ?: "guest"
+                    onSuccess(user)
+                } else {
+                    errorMessage = "Mã PIN không chính xác"
+                    pin = ""
+                }
+                isLoading = false
+            }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(backgroundGradient)) {
@@ -68,35 +86,39 @@ fun PinEntryScreen(
 
             OutlinedTextField(
                 value = pin,
-                onValueChange = { 
-                    if (it.length <= 4) {
-                        pin = it
+                onValueChange = { newValue ->
+                    if (newValue.length <= 4 && newValue.all { it.isDigit() }) {
+                        pin = newValue
                         errorMessage = null
-                        if (it.length == 4) {
-                            scope.launch {
-                                val storedPin = securityPrefs.localPin.first()
-                                if (pin == storedPin) {
-                                    val user = securityPrefs.username.first() ?: "guest"
-                                    onSuccess(user)
-                                } else {
-                                    errorMessage = "Mã PIN không chính xác"
-                                    pin = ""
-                                }
-                            }
-                        }
                     }
                 },
                 label = { Text("Mã PIN 4 số") },
                 visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                modifier = Modifier.width(180.dp),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.width(200.dp),
                 shape = RoundedCornerShape(12.dp),
-                singleLine = true
+                singleLine = true,
+                enabled = !isLoading
             )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Button(
+                onClick = verifyPin,
+                modifier = Modifier.width(200.dp).height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                enabled = pin.length == 4 && !isLoading
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
+                } else {
+                    Text("XÁC NHẬN")
+                }
+            }
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            TextButton(onClick = onFallback) {
+            TextButton(onClick = onFallback, enabled = !isLoading) {
                 Text("Sử dụng tài khoản khác / Đăng nhập lại", color = Color.Gray)
             }
         }

@@ -31,8 +31,8 @@ object SimManager {
             Log.e("SimManager", "Failed to send SIM alert: ${e.message}")
         }
 
-        // 3. Show Local Alert Notification
-        showLocalAlert(context, newOperator)
+        // 3. Show Local Alert Notification (Disabled as per user request)
+        // showLocalAlert(context, newOperator)
     }
 
     private fun showLocalAlert(context: Context, operator: String) {

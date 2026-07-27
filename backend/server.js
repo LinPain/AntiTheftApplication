@@ -10,7 +10,6 @@ require('dotenv').config();
 
 const User = require('./models/User');
 const OTPLog = require('./models/OTPLog');
-const Intruder = require('./models/Intruder');
 const locationRoutes = require('./routes/locationRoutes');
 
 const app = express();
@@ -18,6 +17,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
+app.set('io', io);
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_key';
@@ -143,6 +143,73 @@ app.post('/api/auth/resend-otp', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/auth/forgot-password', async (req, res) => {
+    try {
+        let { identifier } = req.body;
+        if (!identifier) return res.status(400).json({ error: 'Identifier required' });
+        identifier = identifier.toLowerCase().trim();
+        const user = await User.findOne({ $or: [{ username: identifier }, { email: identifier }] });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        const code = await createOTP(user.username, 'RESET', user.email);
+        res.json({ username: user.username, mockCode: MOCK_OTP ? code : undefined });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/verify-reset', async (req, res) => {
+    try {
+        let { username, otp } = req.body;
+        username = username.toLowerCase().trim();
+        const user = await User.findOne({ $or: [{ username }, { email: username }] });
+        const log = await OTPLog.findOne({ identifier: user.username.toLowerCase(), code: otp, type: 'RESET' });
+        if (!log || log.expiresAt < new Date()) return res.status(401).json({ error: 'Invalid' });
+        const resetToken = jwt.sign({ id: user._id, type: 'password_reset' }, JWT_SECRET, { expiresIn: '15m' });
+        await OTPLog.deleteOne({ _id: log._id });
+        res.json({ resetToken });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+        const { resetToken, newPassword } = req.body;
+        const decoded = jwt.verify(resetToken, JWT_SECRET);
+        if (decoded.type !== 'password_reset') throw new Error('Invalid');
+        const user = await User.findById(decoded.id);
+        user.password = await bcrypt.hash(newPassword, 10);
+        await user.save();
+        res.json({ message: 'Success' });
+    } catch (e) { res.status(401).json({ error: 'Invalid or expired' }); }
+});
+
+app.post('/api/auth/alert-risk', async (req, res) => {
+    try {
+        let { username, riskScore } = req.body;
+        username = username.toLowerCase().trim();
+        const user = await User.findOne({ username });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER, to: user.email,
+            subject: 'Anti-Theft System - RISK ALERT',
+            text: `High risk detected. Score: ${riskScore}`
+        });
+        res.json({ message: 'OK' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/alert-sim', async (req, res) => {
+    try {
+        let { username, operatorName } = req.body;
+        username = username.toLowerCase().trim();
+        const user = await User.findOne({ username });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER, to: user.email,
+            subject: 'Anti-Theft System - SIM CHANGE ALERT',
+            text: `SIM change detected. Carrier: ${operatorName}`
+        });
+        res.json({ message: 'OK' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // --- PROTECTED API ---
 app.use('/api/:username/location', (req, res, next) => {
     req.username = (req.params.username || "").toLowerCase().trim();
@@ -169,18 +236,6 @@ app.post('/api/:username/track', authGuard, (req, res) => {
     getUserState(req.params.username).trackRequest = { active: true, timestamp: Date.now() };
     io.to(req.params.username.toLowerCase()).emit('trackRequested');
     res.json({ message: 'OK' });
-});
-
-app.post('/api/:username/intruder', authGuard, async (req, res) => {
-    const entry = new Intruder({ username: req.params.username.toLowerCase(), ...req.body });
-    await entry.save();
-    io.to(req.params.username.toLowerCase()).emit('intruderAlert', entry);
-    res.status(201).json({ message: 'OK' });
-});
-
-app.get('/api/:username/intruders', authGuard, async (req, res) => {
-    const list = await Intruder.find({ username: req.params.username.toLowerCase() }).sort({ timestamp: -1 }).limit(20);
-    res.json(list);
 });
 
 // --- STATIC & SOCKET ---

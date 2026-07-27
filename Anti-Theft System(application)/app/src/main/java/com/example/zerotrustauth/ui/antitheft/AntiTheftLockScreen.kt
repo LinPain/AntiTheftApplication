@@ -65,7 +65,7 @@ fun AntiTheftLockScreen(
                     override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                         super.onAuthenticationSucceeded(result)
                         scope.launch {
-                            securityPrefs.setRemoteLockdown(false)
+                            securityPrefs.clearAllLocks()
                             onUnlockSuccess()
                         }
                     }
@@ -159,7 +159,7 @@ fun AntiTheftLockScreen(
             onClick = {
                 if (pin == correctPin) {
                     scope.launch {
-                        securityPrefs.setRemoteLockdown(false)
+                        securityPrefs.clearAllLocks()
                         onUnlockSuccess()
                     }
                 } else {

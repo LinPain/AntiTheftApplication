@@ -75,6 +75,7 @@ fun DashboardScreen(
     val apiService = remember(authToken) { LocationApiService.create(authToken) }
     var recentActivities by remember { mutableStateOf<List<LocationResponse>>(emptyList()) }
     var showPinChangeDialog by remember { mutableStateOf(false) }
+    var isRefreshing by remember { mutableStateOf(false) }
 
     // Device Admin Status
     val dpm = remember { context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager }
@@ -85,13 +86,13 @@ fun DashboardScreen(
         isAdminActive = dpm.isAdminActive(adminComponent)
     }
 
-    LaunchedEffect(username) {
-        if (!PermissionHelper.hasOverlayPermission(context)) {
-            PermissionHelper.requestOverlayPermission(context)
-        }
-
-        // Auto-enable tracking when logged in to dashboard
+    val refreshDashboard = {
+        isRefreshing = true
         scope.launch {
+            // Trigger Discovery Pulse: Force device to show up on dashboard immediately
+            LocationService.triggerImmediateUpload(context)
+
+            // Auto-enable tracking when logged in to dashboard
             if (!LocationService.isRunning) {
                 securityPrefs.setLiveTracking(true)
                 val intent = Intent(context, LocationService::class.java)
@@ -101,14 +102,20 @@ fun DashboardScreen(
                     context.startService(intent)
                 }
             }
-        }
 
-        try {
-            val locationHelper = LocationHelper(context)
-            recentActivities = apiService.getLocationHistory(username, locationHelper.getDeviceId()).take(3)
-        } catch (e: Exception) {
-            e.printStackTrace()
+            try {
+                val locationHelper = LocationHelper(context)
+                recentActivities = apiService.getLocationHistory(username, locationHelper.getDeviceId()).take(3)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                isRefreshing = false
+            }
         }
+    }
+
+    LaunchedEffect(username) {
+        refreshDashboard()
     }
     
     val backgroundGradient = if (isDarkMode) {
@@ -132,6 +139,16 @@ fun DashboardScreen(
                     ) 
                 },
                 actions = {
+                    IconButton(
+                        onClick = { refreshDashboard() },
+                        enabled = !isRefreshing
+                    ) {
+                        if (isRefreshing) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                        }
+                    }
                     IconButton(onClick = {
                         scope.launch {
                             securityPrefs.setLiveTracking(false)

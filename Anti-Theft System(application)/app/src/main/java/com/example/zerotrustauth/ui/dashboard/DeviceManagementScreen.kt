@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.example.zerotrustauth.ThemeManager
 import com.example.zerotrustauth.data.SecurityPrefs
 import com.example.zerotrustauth.logic.LocationHelper
+import com.example.zerotrustauth.service.LocationService
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,10 +35,28 @@ fun DeviceManagementScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val securityPrefs = remember { SecurityPrefs(context) }
     val isDeviceTrusted by securityPrefs.isDeviceTrusted.collectAsState(initial = false)
+    val authToken = securityPrefs.authToken.collectAsState(initial = null).value
+    val username = securityPrefs.username.collectAsState(initial = "").value ?: ""
     val scope = rememberCoroutineScope()
     
     val locationHelper = remember { LocationHelper(context) }
-    val currentDeviceName = remember { locationHelper.getDeviceName() }
+    val currentDeviceId = remember { locationHelper.getDeviceId() }
+    val apiService = remember(authToken) { com.example.zerotrustauth.network.LocationApiService.create(authToken) }
+    
+    var devices by remember { mutableStateOf<List<com.example.zerotrustauth.network.DeviceStatusResponse>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(username) {
+        if (username.isNotEmpty()) {
+            try {
+                devices = apiService.getDeviceList(username)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                isLoading = false
+            }
+        }
+    }
 
     val isDarkMode = ThemeManager.isDarkTheme.value
     val backgroundGradient = if (isDarkMode) {
@@ -78,13 +97,17 @@ fun DeviceManagementScreen(onBack: () -> Unit) {
                     TrustStatusCard(isDeviceTrusted, isDarkMode) { trusted ->
                         scope.launch {
                             securityPrefs.setDeviceTrusted(trusted)
+                            // Trigger immediate pulse to sync device name and location to dashboard
+                            if (trusted) {
+                                LocationService.triggerImmediateUpload(context)
+                            }
                         }
                     }
                 }
 
                 item {
                     Text(
-                        "Lịch sử thiết bị",
+                        "Danh sách thiết bị",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = if (isDarkMode) Color.White else Color.Black,
@@ -92,12 +115,41 @@ fun DeviceManagementScreen(onBack: () -> Unit) {
                     )
                 }
 
-                val devices = listOf(
-                    DeviceItemData("$currentDeviceName (Hiện tại)", "Đang hoạt động", true, isDeviceTrusted)
-                )
-
-                items(devices) { device ->
-                    DeviceRowImproved(device, isDarkMode)
+                if (isLoading) {
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                } else if (devices.isEmpty()) {
+                    item {
+                        Text("Chưa có thiết bị nào được ghi nhận.", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                    }
+                } else {
+                    items(devices) { device ->
+                        val isCurrent = device._id == currentDeviceId
+                        DeviceRowImproved(
+                            DeviceItemData(
+                                name = device.deviceName ?: device._id,
+                                info = if (isCurrent) "Đang hoạt động (Thiết bị này)" else "Lần cuối: ${device.lastTimestamp.split("T")[0]}",
+                                isCurrent = isCurrent,
+                                isTrusted = if (isCurrent) isDeviceTrusted else false // Note: Backend doesn't store trust yet
+                            ),
+                            isDarkMode = isDarkMode,
+                            onDelete = if (!isCurrent) {
+                                {
+                                    scope.launch {
+                                        try {
+                                            apiService.removeDevice(username, device._id)
+                                            devices = apiService.getDeviceList(username)
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        }
+                                    }
+                                }
+                            } else null
+                        )
+                    }
                 }
             }
         }
@@ -156,7 +208,7 @@ fun TrustStatusCard(isTrusted: Boolean, isDarkMode: Boolean, onToggleTrust: (Boo
 data class DeviceItemData(val name: String, val info: String, val isCurrent: Boolean, val isTrusted: Boolean)
 
 @Composable
-fun DeviceRowImproved(device: DeviceItemData, isDarkMode: Boolean) {
+fun DeviceRowImproved(device: DeviceItemData, isDarkMode: Boolean, onDelete: (() -> Unit)? = null) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -186,8 +238,15 @@ fun DeviceRowImproved(device: DeviceItemData, isDarkMode: Boolean) {
                 Text(device.name, fontWeight = FontWeight.Bold, color = if (isDarkMode) Color.White else Color.Black)
                 Text(device.info, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
             }
+            
             if (device.isTrusted) {
                 Icon(Icons.Default.CheckCircle, contentDescription = "Trusted", tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
+            }
+            
+            onDelete?.let {
+                IconButton(onClick = it) {
+                    Icon(Icons.Default.Delete, contentDescription = "Remove", tint = Color.Red.copy(alpha = 0.7f))
+                }
             }
         }
     }

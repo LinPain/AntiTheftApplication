@@ -158,25 +158,30 @@ fun RegisterScreen(
                                 } else if (password != confirmPassword) {
                                     errorMessage = "Mật khẩu không khớp"
                                 } else {
-                                    isRegistering = true
-                                    scope.launch {
-                                        try {
-                                            val response = apiService.register(
-                                                RegisterRequest(
-                                                    username.trim().lowercase(), 
-                                                    email.trim().lowercase(), 
-                                                    password
+                                    val validation = com.example.zerotrustauth.logic.PasswordValidator.validate(password)
+                                    if (!validation.isValid) {
+                                        errorMessage = validation.errorMessage
+                                    } else {
+                                        isRegistering = true
+                                        scope.launch {
+                                            try {
+                                                val response = apiService.register(
+                                                    RegisterRequest(
+                                                        username.trim().lowercase(), 
+                                                        email.trim().lowercase(), 
+                                                        password
+                                                    )
                                                 )
-                                            )
-                                            isRegistering = false
-                                            if (response.verificationRequired) {
-                                                onNavigateToVerification(username)
-                                            } else {
-                                                showSuccessDialog = true
+                                                isRegistering = false
+                                                if (response.verificationRequired) {
+                                                    onNavigateToVerification(username)
+                                                } else {
+                                                    showSuccessDialog = true
+                                                }
+                                            } catch (e: Exception) {
+                                                isRegistering = false
+                                                errorMessage = com.example.zerotrustauth.network.ErrorUtils.parseErrorMessage(e)
                                             }
-                                        } catch (e: Exception) {
-                                            isRegistering = false
-                                            errorMessage = "Đăng ký lỗi: ${e.message}"
                                         }
                                     }
                                 }

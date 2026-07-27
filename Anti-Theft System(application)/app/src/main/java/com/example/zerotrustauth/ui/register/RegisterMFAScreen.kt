@@ -123,7 +123,7 @@ fun RegisterMFAScreen(
                                         resendCooldown = 30
                                         errorMessage = "Đã gửi lại mã!"
                                     } catch (e: Exception) {
-                                        errorMessage = "Lỗi: ${e.message}"
+                                        errorMessage = com.example.zerotrustauth.network.ErrorUtils.parseErrorMessage(e)
                                     }
                                 }
                             }

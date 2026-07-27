@@ -34,16 +34,24 @@ fun LoginScreen(
     onNavigateToLockdown: () -> Unit,
     onNavigateToVerification: (String) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val securityPrefs = remember { SecurityPrefs(context) }
+    
+    val rememberedState = securityPrefs.isRememberMeEnabled.collectAsState(initial = false).value
+    var rememberMe by remember { mutableStateOf(false) }
+    
+    // Initialize rememberMe from stored preference
+    LaunchedEffect(rememberedState) {
+        rememberMe = rememberedState
+    }
+
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var rememberMe by remember { mutableStateOf(false) }
     var showPinSetup by remember { mutableStateOf(false) }
     var pendingSuccessData by remember { mutableStateOf<String?>(null) }
     
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val securityPrefs = remember { SecurityPrefs(context) }
     val failedUnlockCount = securityPrefs.failedUnlockCount.collectAsState(initial = 0).value
     val isOutsideSafeZone = securityPrefs.isOutsideSafeZone.collectAsState(initial = false).value
     
@@ -175,10 +183,13 @@ fun LoginScreen(
                                         if (response.lockdownRequired) {
                                             onNavigateToLockdown()
                                         } else if (response.verificationRequired) {
+                                            securityPrefs.setRememberMe(rememberMe)
                                             onNavigateToVerification(response.username ?: username)
                                         } else if (response.mfaRequired) {
+                                            securityPrefs.setRememberMe(rememberMe)
                                             onNavigateToMFA(response.username ?: username)
                                         } else {
+                                            // Ensure data is saved BEFORE navigation
                                             securityPrefs.saveAuthData(response.token, response.username ?: username)
                                             securityPrefs.setRememberMe(rememberMe)
                                             
@@ -192,7 +203,7 @@ fun LoginScreen(
                                         }
                                     } catch (e: Exception) {
                                         isLoading = false
-                                        errorMessage = "Đăng nhập thất bại: ${e.message}"
+                                        errorMessage = com.example.zerotrustauth.network.ErrorUtils.parseErrorMessage(e)
                                     }
                                 }
                             },

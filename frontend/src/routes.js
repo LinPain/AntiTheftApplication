@@ -39,6 +39,7 @@ Coded by www.creative-tim.com
 import SignIn from "layouts/authentication/sign-in";
 import SignUp from "layouts/authentication/sign-up";
 import ForgotPassword from "layouts/authentication/forgot-password";
+import MFA from "layouts/authentication/mfa";
 
 import Account from "layouts/antitheft/Account";
 import Devices from "layouts/antitheft/Devices";
@@ -104,6 +105,13 @@ const routes = [
     icon: <Icon fontSize="small">assignment</Icon>,
     route: "/authentication/sign-up",
     component: <SignUp />,
+  },
+  {
+    type: "none",
+    name: "MFA",
+    key: "mfa",
+    route: "/authentication/mfa",
+    component: <MFA />,
   },
 ];
 

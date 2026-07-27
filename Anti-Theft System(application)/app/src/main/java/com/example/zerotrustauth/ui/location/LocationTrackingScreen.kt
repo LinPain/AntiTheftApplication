@@ -69,20 +69,6 @@ fun LocationTrackingScreen(
         }
     )
 
-    val notificationLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { /* Handled by system */ }
-    )
-
-    LaunchedEffect(Unit) {
-        // Notification permission is less intrusive, but we still check SDK version
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-    }
-
     var currentLocation by remember { 
         mutableStateOf(
             if (initialLat != null && initialLon != null) GeoPoint(initialLat, initialLon) else null
@@ -99,6 +85,7 @@ fun LocationTrackingScreen(
     LaunchedEffect(hasLocationPermission, isRealTimeTrackingEnabled) {
         if (hasLocationPermission && initialLat == null) {
             val devId = locationHelper.getDeviceId()
+            val devName = locationHelper.getDeviceName()
             while (true) {
                 locationHelper.getCurrentLocation().addOnSuccessListener { location ->
                     location?.let {
@@ -115,6 +102,7 @@ fun LocationTrackingScreen(
                                     username = username,
                                     location = LocationRequest(
                                         deviceId = devId,
+                                        deviceName = devName,
                                         latitude = it.latitude,
                                         longitude = it.longitude
                                     )

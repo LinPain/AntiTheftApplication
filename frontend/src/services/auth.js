@@ -39,20 +39,35 @@ export async function startRegistration({ name, email, phone, password, method }
 }
 
 export async function verifyRegistrationOtp({ email, otp }) {
-  const result = await request("/api/auth/verify-otp", { email, otp });
+  const result = await request("/api/auth/verify-registration", { username: email, otp });
   return result;
 }
 
-export async function resendRegistrationOtp(email) {
-  const result = await request("/api/auth/resend-otp", { email });
+export async function resendRegistrationOtp(email, type = "REGISTRATION") {
+  const result = await request("/api/auth/resend-otp", { username: email, type });
   return result;
 }
 
 export async function login({ email, password }) {
-  const result = await request("/api/auth/login", { email, password });
-  const user = result.user;
-  localStorage.setItem(CURRENT_KEY, JSON.stringify(user));
-  return user;
+  const result = await request("/api/auth/login", { username: email, password });
+  // Backend returns mfaRequired if code needed, or token if successful
+  return result;
+}
+
+export async function verifyLoginOtp({ username, otp }) {
+  return await request("/api/auth/verify-otp", { username, otp });
+}
+
+export async function forgotPassword(identifier) {
+  return await request("/api/auth/forgot-password", { identifier });
+}
+
+export async function verifyReset(username, otp) {
+  return await request("/api/auth/verify-reset", { username, otp });
+}
+
+export async function resetPassword(resetToken, newPassword) {
+  return await request("/api/auth/reset-password", { resetToken, newPassword });
 }
 
 export function logout() {

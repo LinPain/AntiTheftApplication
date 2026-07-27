@@ -136,23 +136,36 @@ fun ForgotPasswordScreen(
                                 try {
                                     when (step) {
                                         1 -> {
-                                            val resp = apiService.forgotPassword(ForgotPasswordRequest(identifier))
-                                            usernameFromServer = resp.username ?: ""
+                                            if (identifier.isBlank()) throw Exception("Vui lòng nhập Email hoặc Username")
+                                            val cleanId = identifier.trim().lowercase()
+                                            
+                                            val resp = apiService.forgotPassword(ForgotPasswordRequest(cleanId))
+                                            // Fallback to identifier if username is not returned
+                                            usernameFromServer = resp.username ?: cleanId
                                             step = 2
+                                            errorMessage = null
                                         }
                                         2 -> {
+                                            if (otpCode.length < 6) throw Exception("Vui lòng nhập đủ 6 số OTP")
                                             val resp = apiService.verifyReset(VerifyResetRequest(usernameFromServer, otpCode))
-                                            resetToken = resp.resetToken ?: ""
+                                            resetToken = resp.resetToken ?: throw Exception("Không nhận được mã xác thực đặt lại")
                                             step = 3
+                                            errorMessage = null
                                         }
                                         3 -> {
                                             if (newPassword != confirmPassword) throw Exception("Mật khẩu không khớp")
-                                            apiService.resetPassword(ResetPasswordRequest(resetToken, newPassword))
-                                            onSuccess()
+                                            val validation = com.example.zerotrustauth.logic.PasswordValidator.validate(newPassword)
+                                            if (!validation.isValid) {
+                                                errorMessage = validation.errorMessage
+                                            } else {
+                                                apiService.resetPassword(ResetPasswordRequest(resetToken, newPassword))
+                                                errorMessage = null
+                                                onSuccess()
+                                            }
                                         }
                                     }
                                 } catch (e: Exception) {
-                                    errorMessage = e.message ?: "Đã có lỗi xảy ra"
+                                    errorMessage = com.example.zerotrustauth.network.ErrorUtils.parseErrorMessage(e)
                                 } finally {
                                     isLoading = false
                                 }

@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const locationSchema = new mongoose.Schema({
     username: { type: String, required: true },
     deviceId: { type: String, required: true },
+    deviceName: { type: String },
     latitude: { type: Number, required: true },
     longitude: { type: Number, required: true },
     timestamp: { type: Date, default: Date.now }

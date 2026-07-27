@@ -38,6 +38,11 @@ fun MFAScreen(
     val isDarkMode = ThemeManager.isDarkTheme.value
     val scope = rememberCoroutineScope()
     val apiService = remember { LocationApiService.create() }
+    
+    val isRemembered = securityPrefs.isRememberMeEnabled.collectAsState(initial = false).value
+    val hasPin = !securityPrefs.localPin.collectAsState(initial = null).value.isNullOrBlank()
+    var showPinSetup by remember { mutableStateOf(false) }
+    var pendingToken by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(resendCooldown) {
         if (resendCooldown > 0) {
@@ -152,10 +157,16 @@ fun MFAScreen(
                                         val response = apiService.verifyOtp(VerifyOtpRequest(username, otpCode))
                                         securityPrefs.saveAuthData(response.token, username)
                                         isVerifying = false
-                                        onVerifySuccess()
+                                        
+                                        if (isRemembered && !hasPin) {
+                                            pendingToken = response.token
+                                            showPinSetup = true
+                                        } else {
+                                            onVerifySuccess()
+                                        }
                                     } catch (e: Exception) {
                                         isVerifying = false
-                                        errorMessage = "Lỗi: ${e.message}"
+                                        errorMessage = com.example.zerotrustauth.network.ErrorUtils.parseErrorMessage(e)
                                     }
                                 }
                             }
@@ -179,6 +190,22 @@ fun MFAScreen(
                     }
                 }
             }
+        }
+
+        if (showPinSetup) {
+            PinSetupDialog(
+                onDismiss = { 
+                    showPinSetup = false
+                    onVerifySuccess()
+                },
+                onPinSet = { pin ->
+                    scope.launch {
+                        securityPrefs.setLocalPin(pin)
+                        showPinSetup = false
+                        onVerifySuccess()
+                    }
+                }
+            )
         }
     }
 }

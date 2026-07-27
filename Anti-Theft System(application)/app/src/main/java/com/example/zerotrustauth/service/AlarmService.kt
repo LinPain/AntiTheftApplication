@@ -43,7 +43,7 @@ class AlarmService : Service() {
 
     companion object {
         private const val NOTIFICATION_ID = 5678
-        private const val CHANNEL_ID = "alarm_channel"
+        private const val CHANNEL_ID = "alarm_channel_silent"
         private const val LOCKDOWN_NOTIFICATION_ID = 9999
         private const val POLLING_INTERVAL = 5000L
     }
@@ -134,11 +134,21 @@ class AlarmService : Service() {
             WearableAlarmSyncModel.syncAlarmStatus(this, status.alarm.active)
 
             val wasLocked = prefs.isRemoteLockdownActive.first()
-            if (status.lockdown.active && !wasLocked) showLockdownNotification()
-            prefs.setRemoteLockdown(status.lockdown.active)
+            if (status.lockdown.active && !wasLocked) {
+                showLockdownNotification()
+                prefs.setRemoteLockdown(true)
+            } else if (!status.lockdown.active && wasLocked) {
+                prefs.setRemoteLockdown(false)
+            }
+
+            val currentLost = prefs.isLostModeActive.first()
+            val currentMsg = prefs.lostModeMessage.first()
+            val currentPhone = prefs.lostModePhone.first()
 
             status.lostMode?.let { lost ->
-                prefs.setLostMode(lost.active, lost.message, lost.phoneNumber)
+                if (lost.active != currentLost || lost.message != currentMsg || lost.phoneNumber != currentPhone) {
+                    prefs.setLostMode(lost.active, lost.message, lost.phoneNumber)
+                }
             }
 
             status.trackRequest?.let { req ->
@@ -158,14 +168,21 @@ class AlarmService : Service() {
                 val isRemoteLocked = prefs.isRemoteLockdownActive.first()
                 val isLost = prefs.isLostModeActive.first()
                 if (isRemoteLocked || isLost) {
-                    forceOpenApp()
-                    if (Settings.canDrawOverlays(this@AlarmService)) {
+                    // Check if app is in foreground. If not, force it.
+                    if (!com.example.zerotrustauth.logic.AppState.isAppInForeground.value) {
+                        forceOpenApp()
+                    }
+                    
+                    // Show overlay only if NOT in foreground to block other apps
+                    if (Settings.canDrawOverlays(this@AlarmService) && !com.example.zerotrustauth.logic.AppState.isAppInForeground.value) {
                         withContext(Dispatchers.Main) { showOverlay() }
+                    } else {
+                        withContext(Dispatchers.Main) { removeOverlay() }
                     }
                 } else {
                     withContext(Dispatchers.Main) { removeOverlay() }
                 }
-                delay(500L)
+                delay(1000L) // Reduced to 1 second for better responsiveness
             }
         }
     }
@@ -178,10 +195,17 @@ class AlarmService : Service() {
                 WindowManager.LayoutParams.MATCH_PARENT,
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_SYSTEM_ALERT,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
                 PixelFormat.TRANSLUCENT
-            ).apply { gravity = Gravity.CENTER }
-            overlayView = View(this).apply { setBackgroundColor(0x01000000) }
+            ).apply { 
+                gravity = Gravity.CENTER
+                // Attempt to cover the entire screen including navigation/status bars
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
+            // Use a semi-opaque red to indicate the device is locked and block underlying UI
+            overlayView = View(this).apply { setBackgroundColor(0xAAFF0000.toInt()) }
             windowManager.addView(overlayView, params)
         } catch (e: Exception) { }
     }
@@ -231,6 +255,8 @@ class AlarmService : Service() {
     }
 
     private fun showLockdownNotification() {
+        // Disabled to ensure no intrusive pop-ups during lockdown as per user request
+        /*
         val intent = Intent(this, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK }
         val pi = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
         val n = NotificationCompat.Builder(this, CHANNEL_ID)
@@ -239,18 +265,19 @@ class AlarmService : Service() {
             .setCategory(NotificationCompat.CATEGORY_ALARM).setFullScreenIntent(pi, true)
             .setOngoing(true).build()
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(LOCKDOWN_NOTIFICATION_ID, n)
+        */
     }
 
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Bảo mật Zero Trust đang hoạt động").setContentText("Đang giám sát các lệnh khẩn cấp từ xa")
-            .setSmallIcon(android.R.drawable.ic_lock_idle_lock).setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_lock).setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true).build()
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val c = NotificationChannel(CHANNEL_ID, "Lệnh điều khiển từ xa", NotificationManager.IMPORTANCE_HIGH)
+            val c = NotificationChannel(CHANNEL_ID, "Lệnh điều khiển từ xa", NotificationManager.IMPORTANCE_MIN)
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(c)
         }
     }

@@ -27,6 +27,8 @@ import Toolbar from "@mui/material/Toolbar";
 import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
 import Icon from "@mui/material/Icon";
+import Tooltip from "@mui/material/Tooltip";
+import CircularProgress from "@mui/material/CircularProgress";
 
 // Material Dashboard 2 React components
 import MDBox from "components/MDBox";
@@ -35,6 +37,9 @@ import MDInput from "components/MDInput";
 // Material Dashboard 2 React example components
 import Breadcrumbs from "examples/Breadcrumbs";
 import NotificationItem from "examples/Items/NotificationItem";
+
+import { triggerDiscoveryPulse } from "services/device";
+import { getCurrentUser } from "services/auth";
 
 // Custom styles for DashboardNavbar
 import {
@@ -58,7 +63,22 @@ function DashboardNavbar({ absolute, light, isMini }) {
   const [controller, dispatch] = useMaterialUIController();
   const { miniSidenav, transparentNavbar, fixedNavbar, openConfigurator, darkMode } = controller;
   const [openMenu, setOpenMenu] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const route = useLocation().pathname.split("/").slice(1);
+  const user = getCurrentUser();
+
+  const handleSync = async () => {
+    if (!user) return;
+    try {
+      setIsSyncing(true);
+      await triggerDiscoveryPulse(user.username, user.token);
+      // Small delay for effect
+      setTimeout(() => setIsSyncing(false), 1000);
+    } catch (error) {
+      console.error("Sync failed:", error);
+      setIsSyncing(false);
+    }
+  };
 
   useEffect(() => {
     // Setting the navbar type
@@ -164,6 +184,22 @@ function DashboardNavbar({ absolute, light, isMini }) {
               >
                 <Icon sx={iconsStyle}>settings</Icon>
               </IconButton>
+              <Tooltip title="Đồng bộ thiết bị">
+                <IconButton
+                  size="small"
+                  disableRipple
+                  color="inherit"
+                  sx={navbarIconButton}
+                  onClick={handleSync}
+                  disabled={isSyncing}
+                >
+                  {isSyncing ? (
+                    <CircularProgress size={20} color="inherit" />
+                  ) : (
+                    <Icon sx={iconsStyle}>sync</Icon>
+                  )}
+                </IconButton>
+              </Tooltip>
               <IconButton
                 size="small"
                 disableRipple

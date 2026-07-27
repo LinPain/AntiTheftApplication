@@ -3,6 +3,7 @@ package com.example.zerotrustauth.network
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.DELETE
 import retrofit2.http.Path
 import retrofit2.http.Header
 import retrofit2.Retrofit
@@ -12,6 +13,7 @@ import okhttp3.Interceptor
 
 data class LocationRequest(
     val deviceId: String,
+    val deviceName: String? = null,
     val latitude: Double,
     val longitude: Double
 )
@@ -53,7 +55,6 @@ data class VerifyOtpRequest(val username: String, val otp: String)
 data class ResendOtpRequest(val username: String, val type: String)
 data class RiskAlertRequest(val username: String, val riskScore: Int)
 data class SimAlertRequest(val username: String, val operatorName: String)
-data class IntruderRequest(val imageBase64: String, val latitude: Double, val longitude: Double)
 data class AuthResponse(
     val message: String,
     val token: String? = null,
@@ -63,6 +64,14 @@ data class AuthResponse(
     val mfaRequired: Boolean = false,
     val lockdownRequired: Boolean = false,
     val verificationRequired: Boolean = false
+)
+
+data class DeviceStatusResponse(
+    val _id: String, // deviceId
+    val deviceName: String?,
+    val lastLatitude: Double,
+    val lastLongitude: Double,
+    val lastTimestamp: String
 )
 
 interface LocationApiService {
@@ -101,10 +110,13 @@ interface LocationApiService {
         @Body request: SimAlertRequest
     ): AuthResponse
 
-    @POST("api/{username}/intruder")
-    suspend fun uploadIntruderLog(
+    @GET("api/{username}/location/devices/status")
+    suspend fun getDeviceList(@Path("username") username: String): List<DeviceStatusResponse>
+
+    @DELETE("api/{username}/location/{deviceId}")
+    suspend fun removeDevice(
         @Path("username") username: String,
-        @Body request: IntruderRequest
+        @Path("deviceId") deviceId: String
     ): AuthResponse
 
     // Location APIs - Namespaced by username

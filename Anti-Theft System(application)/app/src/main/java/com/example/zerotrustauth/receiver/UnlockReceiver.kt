@@ -39,6 +39,7 @@ class UnlockReceiver : BroadcastReceiver() {
                             username = username,
                             location = LocationRequest(
                                 deviceId = locationHelper.getDeviceId(),
+                                deviceName = locationHelper.getDeviceName(),
                                 latitude = it.latitude,
                                 longitude = it.longitude
                             )

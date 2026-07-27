@@ -20,14 +20,7 @@ class SecurityAdminReceiver : DeviceAdminReceiver() {
         val prefs = SecurityPrefs(context)
         scope.launch {
             prefs.incrementFailedUnlock()
-            val failures = prefs.failedUnlockCount.first()
             
-            // Trigger intruder capture on 3rd failure
-            if (failures >= 3) {
-                Log.w("SecurityAdmin", "Multiple failures ($failures). Triggering intruder capture.")
-                com.example.zerotrustauth.service.LocationService.triggerIntruderCapture()
-            }
-
             // Evaluate risk and send alert if needed
             RiskManager.checkAndNotify(context)
         }
@@ -48,6 +41,19 @@ class SecurityAdminReceiver : DeviceAdminReceiver() {
     override fun onEnabled(context: Context, intent: Intent) {
         super.onEnabled(context, intent)
         Log.i("SecurityAdmin", "Device Admin Enabled")
+        
+        // Allowlist this app for Lock Task Mode to prevent escaping via Back + Overview
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
+        val adminComponent = android.content.ComponentName(context, SecurityAdminReceiver::class.java)
+        try {
+            dpm.setLockTaskPackages(adminComponent, arrayOf(context.packageName))
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                // Disable all system UI features when in lock task mode for maximum security
+                dpm.setLockTaskFeatures(adminComponent, android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
+            }
+        } catch (e: Exception) {
+            Log.e("SecurityAdmin", "Failed to set lock task packages: ${e.message}")
+        }
     }
 
     override fun onDisabled(context: Context, intent: Intent) {

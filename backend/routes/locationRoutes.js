@@ -6,10 +6,10 @@ const Location = require('../models/Location');
 router.post('/', async (req, res) => {
     try {
         const username = req.username; // From middleware in server.js
-        const { deviceId, latitude, longitude } = req.body;
-        console.log(`[GPS] Location received from ${username} (${deviceId}): ${latitude}, ${longitude}`);
+        const { deviceId, deviceName, latitude, longitude } = req.body;
+        console.log(`[GPS] Location received from ${username} (${deviceName || deviceId}): ${latitude}, ${longitude}`);
 
-        const newLocation = new Location({ username, deviceId, latitude, longitude });
+        const newLocation = new Location({ username, deviceId, deviceName, latitude, longitude });
         await newLocation.save();
 
         // Prevent data overflow: Keep only last 100 locations per device
@@ -41,6 +41,7 @@ router.post('/', async (req, res) => {
             console.log(`[SOCKET] Broadcasting update to room: ${room}`);
             io.to(room).emit('locationUpdate', {
                 deviceId,
+                deviceName,
                 latitude,
                 longitude,
                 timestamp: newLocation.timestamp
@@ -74,6 +75,7 @@ router.get('/devices/status', async (req, res) => {
             { $sort: { timestamp: -1 } },
             { $group: {
                 _id: "$deviceId",
+                deviceName: { $first: "$deviceName" },
                 lastLatitude: { $first: "$latitude" },
                 lastLongitude: { $first: "$longitude" },
                 lastTimestamp: { $first: "$timestamp" }
@@ -92,6 +94,18 @@ router.get('/:deviceId', async (req, res) => {
         const { deviceId } = req.params;
         const history = await Location.find({ username, deviceId }).sort({ timestamp: -1 }).limit(50);
         res.status(200).json(history);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// DELETE /api/:username/location/:deviceId - Remove all records for a specific device
+router.delete('/:deviceId', async (req, res) => {
+    try {
+        const username = req.username;
+        const { deviceId } = req.params;
+        await Location.deleteMany({ username, deviceId });
+        res.status(200).json({ message: `Đã gỡ thiết bị ${deviceId} thành công.` });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

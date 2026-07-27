@@ -10,7 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
+import kotlinx.coroutines.launch
 
 @Composable
 fun LostModeScreen(
@@ -27,6 +28,8 @@ fun LostModeScreen(
     phoneNumber: String
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var showUnlockDialog by remember { mutableStateOf(false) }
 
     // Prevent back navigation
     BackHandler(enabled = true) { }
@@ -131,6 +134,29 @@ fun LostModeScreen(
             style = MaterialTheme.typography.bodySmall,
             color = Color.White.copy(alpha = 0.7f),
             textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        TextButton(onClick = { showUnlockDialog = true }) {
+            Text("XÁC THỰC CHỦ SỞ HỮU", color = Color.White.copy(alpha = 0.5f))
+        }
+    }
+
+    if (showUnlockDialog) {
+        com.example.zerotrustauth.ui.login.PinSetupDialog(
+            title = "Mở khoá chủ sở hữu",
+            onDismiss = { showUnlockDialog = false },
+            onPinSet = { pin ->
+                if (pin == "1234") { // Use system owner PIN
+                    val prefs = com.example.zerotrustauth.data.SecurityPrefs(context)
+                    scope.launch {
+                        prefs.clearAllLocks()
+                        showUnlockDialog = false
+                        // The UI will automatically navigate away due to AppNavigation's LaunchedEffect
+                    }
+                }
+            }
         )
     }
 }

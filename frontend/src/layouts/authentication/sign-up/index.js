@@ -149,13 +149,14 @@ function Cover() {
 
   const handleResendOtp = async () => {
     setError("");
+    setSuccessMessage("");
     try {
-      const result = await auth.resendRegistrationOtp(submittedEmail);
+      const result = await auth.resendRegistrationOtp(submittedEmail, "REGISTRATION");
       setSuccessMessage(
         result.message || `OTP re-sent via ${otpMethod === "sms" ? "SMS" : "email"}.`
       );
-      if (result.debugOtp) {
-        setDebugOtp(result.debugOtp);
+      if (result.mockCode) {
+        setDebugOtp(result.mockCode);
       }
     } catch (err) {
       setError(err.message || "Could not resend OTP");

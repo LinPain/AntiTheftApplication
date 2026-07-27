@@ -44,6 +44,8 @@ import BasicLayout from "layouts/authentication/components/BasicLayout";
 // Images
 import bgImage from "assets/images/bg-sign-in-basic.jpeg";
 
+import { triggerDiscoveryPulse } from "services/device";
+
 function Basic() {
   const [rememberMe, setRememberMe] = useState(false);
 
@@ -74,7 +76,24 @@ function Basic() {
     }
 
     try {
-      await auth.login({ email, password });
+      const response = await auth.login({ email, password });
+
+      if (response.mfaRequired) {
+        navigate("/authentication/mfa", { state: { username: response.username } });
+        return;
+      }
+
+      // If no MFA (direct login), handle session
+      const user = { username: response.username, token: response.token };
+      localStorage.setItem("sat_current_user", JSON.stringify(user));
+
+      // Auto-register website
+      try {
+        await triggerDiscoveryPulse(user.username, user.token);
+      } catch (pulseError) {
+        console.error("Auto-discovery failed:", pulseError);
+      }
+
       navigate("/account");
     } catch (err) {
       setError(err.message || "Login failed");

@@ -27,10 +27,44 @@ class SecurityEventsReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED, 
             Intent.ACTION_LOCKED_BOOT_COMPLETED,
             "android.intent.action.QUICKBOOT_POWERON",
+            "android.intent.action.REBOOT",
             "android.intent.action.SIM_STATE_CHANGED" -> {
-                Log.i("SecurityReceiver", "Device boot or SIM change detected (${intent.action}). Initializing security services.")
-                checkSimState(context, prefs)
-                startServicesIfLoggedIn(context, prefs)
+                Log.i("SecurityReceiver", "System boot event detected: ${intent.action}")
+                
+                // Aggressively re-launch lockdown if it was active before shutdown
+                scope.launch {
+                    try {
+                        // Ensure we have the latest flags from the safe context
+                        val isRemoteLocked = prefs.isRemoteLockdownActive.first()
+                        val isLost = prefs.isLostModeActive.first()
+                        
+                        Log.d("SecurityReceiver", "Lockdown status - Remote: $isRemoteLocked, Lost: $isLost")
+                        
+                        if (isRemoteLocked || isLost) {
+                            Log.w("SecurityReceiver", "RE-ACTIVATING LOCKDOWN ON BOOT")
+                            
+                            // 1. Start Services immediately
+                            startServicesIfLoggedIn(context, prefs)
+                            
+                            // 2. Launch UI with maximum priority
+                            val mainIntent = Intent(context, com.example.zerotrustauth.MainActivity::class.java).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or 
+                                         Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or 
+                                         Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                         Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            }
+                            
+                            // Attempt multiple start methods for reliability
+                            context.startActivity(mainIntent)
+                        } else {
+                            // Normal startup
+                            checkSimState(context, prefs)
+                            startServicesIfLoggedIn(context, prefs)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("SecurityReceiver", "Critical failure during boot reactivation: ${e.message}")
+                    }
+                }
             }
             "android.intent.action.SCREEN_OFF" -> {
                 // Potential placeholder for tracking lock state
