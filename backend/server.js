@@ -73,9 +73,19 @@ const authGuard = (req, res, next) => {
     if (!token) return res.status(401).json({ error: 'No token' });
     jwt.verify(token, JWT_SECRET, (err, decoded) => {
         if (err) return res.status(403).json({ error: 'Expired' });
-        const reqUser = (req.params.username || "").toLowerCase().trim();
+
+        // Clean up both names for comparison
+        const reqUser = (req.params.username || req.username || "").toLowerCase().trim();
         const tokenUser = (decoded.username || "").toLowerCase().trim();
-        if (reqUser && reqUser !== tokenUser) return res.status(403).json({ error: 'Forbidden' });
+
+        // Logging to debug existing user mismatch
+        console.log(`[AUTH] Guard check - Token: ${tokenUser}, Request: ${reqUser}`);
+
+        if (reqUser && reqUser !== tokenUser) {
+            console.error(`[AUTH] Forbidden: ${tokenUser} tried to access ${reqUser}`);
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
         req.user = decoded;
         next();
     });

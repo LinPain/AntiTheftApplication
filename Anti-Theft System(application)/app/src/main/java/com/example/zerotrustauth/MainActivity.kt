@@ -428,7 +428,12 @@ fun AppNavigation() {
             )
         }
 
-        composable("lost-mode") { LostModeScreen(lostMsg, lostPhone) }
+        composable("lost-mode") { 
+            LostModeScreen(
+                message = lostMsg, 
+                phoneNumber = lostPhone
+            ) 
+        }
         composable("antitheft") {
             AntiTheftLockScreen(onUnlockSuccess = { 
                 isManuallyUnlocked = true

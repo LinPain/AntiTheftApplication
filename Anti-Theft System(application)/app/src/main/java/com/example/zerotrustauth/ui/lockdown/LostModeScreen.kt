@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
@@ -144,17 +145,54 @@ fun LostModeScreen(
     }
 
     if (showUnlockDialog) {
-        com.example.zerotrustauth.ui.login.PinSetupDialog(
-            title = "Mở khoá chủ sở hữu",
-            onDismiss = { showUnlockDialog = false },
-            onPinSet = { pin ->
-                if (pin == "1234") { // Use system owner PIN
-                    val prefs = com.example.zerotrustauth.data.SecurityPrefs(context)
-                    scope.launch {
-                        prefs.clearAllLocks()
-                        showUnlockDialog = false
-                        // The UI will automatically navigate away due to AppNavigation's LaunchedEffect
+        AlertDialog(
+            onDismissRequest = { showUnlockDialog = false },
+            title = { Text("Xác thực chủ sở hữu") },
+            text = {
+                var pin by remember { mutableStateOf("") }
+                var error by remember { mutableStateOf<String?>(null) }
+                
+                Column {
+                    Text("Nhập mã PIN bảo mật của bạn để mở khoá thiết bị.", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) pin = it },
+                        label = { Text("Mã PIN 4 số") },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (error != null) {
+                        Text(error!!, color = Color.Red, style = MaterialTheme.typography.bodySmall)
                     }
+                    
+                    Spacer(Modifier.height(16.dp))
+                    
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                val prefs = com.example.zerotrustauth.data.SecurityPrefs(context)
+                                val correctPin = prefs.localPin.first()
+                                if (pin == correctPin) {
+                                    prefs.clearAllLocks()
+                                    showUnlockDialog = false
+                                } else {
+                                    error = "Mã PIN không chính xác"
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = pin.length == 4
+                    ) {
+                        Text("XÁC NHẬN MỞ KHOÁ")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showUnlockDialog = false }) {
+                    Text("HUỶ")
                 }
             }
         )

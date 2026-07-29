@@ -17,34 +17,44 @@ function MapView() {
   const [deviceList, setDeviceList] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState("all");
 
+  // Force Leaflet map initialization
+  const initMap = () => {
+    if (!mapRef.current || mapInstance.current || !window.L) return;
+
+    mapInstance.current = window.L.map(mapRef.current).setView([10.762622, 106.660172], 13);
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(mapInstance.current);
+
+    // Fix for Leaflet map not rendering correctly in some layouts
+    setTimeout(() => {
+      if (mapInstance.current) mapInstance.current.invalidateSize();
+    }, 400);
+  };
+
+  // 1. One-time Initialization
   useEffect(() => {
-    // Initialize map
-    if (!mapInstance.current && window.L) {
-      mapInstance.current = window.L.map(mapRef.current).setView([10.762622, 106.660172], 13);
-      window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      }).addTo(mapInstance.current);
-    }
+    initMap();
 
     const storedUser = JSON.parse(localStorage.getItem("sat_current_user") || "{}");
     const token = storedUser.token;
     const activeUser = storedUser.username;
 
-    if (token && activeUser && window.io) {
+    if (token && activeUser && window.io && !socketInstance.current) {
       const apiBase = process.env.REACT_APP_API_BASE || "";
-      // Initialize Socket.io
+
       socketInstance.current = window.io(apiBase, {
         auth: { token },
         extraHeaders: { "ngrok-skip-browser-warning": "true" },
         reconnection: true,
-        reconnectionAttempts: 5
+        reconnectionAttempts: 10
       });
 
       socketInstance.current.on("connect", () => {
         console.log("Socket connected, joining room:", activeUser);
         socketInstance.current.emit("join", activeUser.toLowerCase());
 
-        // Final Hardening: Request a track update immediately upon map load to ensure we have a fresh location
+        // Force a track update immediately upon map load
         fetch(`${apiBase}/api/${activeUser}/track`, {
           method: "POST",
           headers: {
@@ -56,24 +66,25 @@ function MapView() {
       });
 
       socketInstance.current.on("locationUpdate", (data) => {
-        if (!data || !data.deviceId) return;
+        console.log("Location update received:", data);
+        if (!data || !data.deviceId || !mapInstance.current) return;
         const pos = [data.latitude, data.longitude];
         const devName = data.deviceName || data.deviceId;
 
-        if (!markers.current[data.deviceId] && window.L) {
+        // If latitude/longitude are 0 (discovery pulse), just update the list
+        if (pos[0] === 0 && pos[1] === 0) {
+          setDeviceList(prev => prev.includes(data.deviceId) ? prev : [...prev, data.deviceId]);
+          return;
+        }
+
+        if (!markers.current[data.deviceId]) {
           markers.current[data.deviceId] = window.L.marker(pos)
             .addTo(mapInstance.current)
             .bindPopup(`<b>Device:</b> ${devName}`);
-
           setDeviceList(prev => prev.includes(data.deviceId) ? prev : [...prev, data.deviceId]);
-        } else if (markers.current[data.deviceId]) {
+        } else {
           markers.current[data.deviceId].setLatLng(pos);
           markers.current[data.deviceId].setPopupContent(`<b>Device:</b> ${devName}`);
-        }
-
-        // Auto-center only if current selection is 'all' or this specific device
-        if (selectedDevice === "all" || selectedDevice === data.deviceId) {
-          mapInstance.current.panTo(pos);
         }
 
         setLastUpdate(new Date().toLocaleTimeString());
@@ -82,54 +93,62 @@ function MapView() {
       socketInstance.current.on("connect_error", (err) => {
         console.error("Socket connection error:", err.message);
       });
+    }
 
-      // Fetch all devices for this user
+    // Fetch initial device statuses
+    if (token && activeUser) {
+      const apiBase = process.env.REACT_APP_API_BASE || "";
       fetch(`${apiBase}/api/${activeUser}/location/devices/status`, {
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "ngrok-skip-browser-warning": "true"
-        }
+        headers: { "Authorization": `Bearer ${token}`, "ngrok-skip-browser-warning": "true" }
       })
       .then(res => res.json())
       .then(list => {
-        if (!Array.isArray(list)) return;
-        const ids = list.map(d => d._id);
-        setDeviceList(ids);
+        if (!Array.isArray(list) || !mapInstance.current) return;
+        setDeviceList(list.map(d => d._id));
 
         list.forEach(dev => {
+          if (dev.lastLatitude === 0 && dev.lastLongitude === 0) return;
           const pos = [dev.lastLatitude, dev.lastLongitude];
           const devName = dev.deviceName || dev._id;
 
-          if (!markers.current[dev._id] && window.L) {
+          if (!markers.current[dev._id]) {
             markers.current[dev._id] = window.L.marker(pos)
               .addTo(mapInstance.current)
               .bindPopup(`<b>Device:</b> ${devName}`);
-          } else if (markers.current[dev._id]) {
+          } else {
             markers.current[dev._id].setLatLng(pos);
-            markers.current[dev._id].setPopupContent(`<b>Device:</b> ${devName}`);
           }
         });
-
-        // Center on the first device if all
-        if (selectedDevice === "all" && list.length > 0) {
-          mapInstance.current.setView([list[0].lastLatitude, list[0].lastLongitude], 15);
-        }
       })
       .catch(err => console.error("Initial device fetch failed:", err));
     }
 
     return () => {
-      if (socketInstance.current) socketInstance.current.disconnect();
+      if (socketInstance.current) {
+        socketInstance.current.disconnect();
+        socketInstance.current = null;
+      }
     };
-  }, [selectedDevice]);
+  }, []);
+
+  // 2. Handle Auto-Centering on Update or Selection
+  useEffect(() => {
+    if (!mapInstance.current) return;
+
+    if (selectedDevice === "all") {
+      // Find the first available marker and center on it
+      const keys = Object.keys(markers.current);
+      if (keys.length > 0) {
+        mapInstance.current.panTo(markers.current[keys[0]].getLatLng());
+      }
+    } else if (markers.current[selectedDevice]) {
+      mapInstance.current.panTo(markers.current[selectedDevice].getLatLng());
+      markers.current[selectedDevice].openPopup();
+    }
+  }, [selectedDevice, lastUpdate]);
 
   const handleDeviceChange = (event) => {
-    const devId = event.target.value;
-    setSelectedDevice(devId);
-    if (devId !== "all" && markers.current[devId]) {
-      mapInstance.current.panTo(markers.current[devId].getLatLng());
-      markers.current[devId].openPopup();
-    }
+    setSelectedDevice(event.target.value);
   };
 
   return (

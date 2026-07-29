@@ -193,10 +193,16 @@ class LocationService : LifecycleService() {
             try {
                 val token = prefs.authToken.first()
                 val username = prefs.username.first()
-                if (username == null || username == "guest" || token.isNullOrBlank()) return@launch
+                if (username == null || username == "guest" || token.isNullOrBlank()) {
+                    Log.w("LocationService", "Skipping GPS upload: User not logged in (username: $username)")
+                    return@launch
+                }
                 
-                LocationApiService.create(token).sendLocation(
-                    username = username,
+                val apiService = LocationApiService.create(token)
+                val cleanUsername = username.trim().lowercase()
+                
+                apiService.sendLocation(
+                    username = cleanUsername,
                     location = NetworkLocationRequest(
                         deviceId = locationHelper.getDeviceId(),
                         deviceName = locationHelper.getDeviceName(),
@@ -204,7 +210,7 @@ class LocationService : LifecycleService() {
                         longitude = lon
                     )
                 )
-                Log.d("LocationService", "GPS Upload success: $lat, $lon")
+                Log.d("LocationService", "GPS Upload success for $cleanUsername: $lat, $lon")
             } catch (e: Exception) {
                 Log.e("LocationService", "GPS Upload failed: ${e.message}")
             }
@@ -212,12 +218,33 @@ class LocationService : LifecycleService() {
     }
 
     private fun sendImmediateLocation(apiService: LocationApiService, username: String) {
+        // 1. Send immediate Discovery Pulse (0,0) to register device presence on the server list
+        scope.launch {
+            try {
+                val cleanUsername = username.trim().lowercase()
+                apiService.sendLocation(
+                    username = cleanUsername,
+                    location = NetworkLocationRequest(
+                        deviceId = locationHelper.getDeviceId(),
+                        deviceName = locationHelper.getDeviceName(),
+                        latitude = 0.0,
+                        longitude = 0.0
+                    )
+                )
+                Log.d("LocationService", "Discovery pulse sent (0,0) for $cleanUsername")
+            } catch (e: Exception) {
+                Log.e("LocationService", "Discovery pulse failed")
+            }
+        }
+
+        // 2. Attempt high-accuracy GPS capture
         locationHelper.getCurrentLocation().addOnSuccessListener { location ->
             location?.let {
                 scope.launch {
                     try {
+                        val cleanUsername = username.trim().lowercase()
                         apiService.sendLocation(
-                            username = username,
+                            username = cleanUsername,
                             location = NetworkLocationRequest(
                                 deviceId = locationHelper.getDeviceId(),
                                 deviceName = locationHelper.getDeviceName(),
@@ -225,12 +252,16 @@ class LocationService : LifecycleService() {
                                 longitude = it.longitude
                             )
                         )
-                        Log.d("LocationService", "Immediate GPS pulse success")
+                        Log.d("LocationService", "Real GPS location uploaded for $cleanUsername: ${it.latitude}, ${it.longitude}")
                     } catch (e: Exception) {
-                        Log.e("LocationService", "Immediate pulse failed")
+                        Log.e("LocationService", "Real GPS upload failed")
                     }
                 }
+            } ?: run {
+                Log.w("LocationService", "GPS returned null, device remains registered via pulse")
             }
+        }.addOnFailureListener {
+            Log.e("LocationService", "GPS capture failed: ${it.message}")
         }
     }
 
