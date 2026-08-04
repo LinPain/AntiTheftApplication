@@ -15,7 +15,26 @@ data class LocationRequest(
     val deviceId: String,
     val deviceName: String? = null,
     val latitude: Double,
-    val longitude: Double
+    val longitude: Double,
+    val accuracy: Float = 0f,
+    val speed: Float = 0f,
+    val timestamp: Long = System.currentTimeMillis(),
+    
+    // Rich Device Info
+    val batteryLevel: Int? = null,
+    val isCharging: Boolean? = null,
+    val networkType: String? = null,
+    val carrier: String? = null,
+    val ipAddress: String? = null,
+    val manufacturer: String? = null,
+    val model: String? = null,
+    val androidVersion: String? = null,
+    val apiLevel: Int? = null,
+    val isRooted: Boolean? = null,
+    val isEncryptionEnabled: Boolean? = null,
+    val isDeveloperMode: Boolean? = null,
+    val isUsbDebuggingEnabled: Boolean? = null,
+    val riskScore: Int? = null
 )
 
 data class LocationResponse(
@@ -55,11 +74,15 @@ data class VerifyOtpRequest(val username: String, val otp: String)
 data class ResendOtpRequest(val username: String, val type: String)
 data class RiskAlertRequest(val username: String, val riskScore: Int)
 data class SimAlertRequest(val username: String, val operatorName: String)
+data class GenericAlertRequest(val event: String, val details: Map<String, Any>)
 data class AuthResponse(
     val message: String,
     val token: String? = null,
     val resetToken: String? = null,
     val username: String? = null,
+    val name: String? = null,
+    val phone: String? = null,
+    val email: String? = null,
     val mockCode: String? = null,
     val mfaRequired: Boolean = false,
     val lockdownRequired: Boolean = false,
@@ -73,6 +96,11 @@ data class DeviceStatusResponse(
     val lastLongitude: Double,
     val lastTimestamp: String
 )
+
+data class SecurityEventRequest(val eventType: String, val details: String? = null)
+data class FlashlightRequest(val active: Boolean)
+
+data class LostModeRequest(val active: Boolean, val message: String? = null, val phoneNumber: String? = null)
 
 interface LocationApiService {
     // Auth APIs
@@ -110,6 +138,18 @@ interface LocationApiService {
         @Body request: SimAlertRequest
     ): AuthResponse
 
+    @POST("api/{username}/alert-generic")
+    suspend fun notifyGenericAlert(
+        @Path("username") username: String,
+        @Body request: GenericAlertRequest
+    ): AuthResponse
+
+    @POST("api/{username}/security-events")
+    suspend fun reportSecurityEvent(
+        @Path("username") username: String,
+        @Body request: SecurityEventRequest
+    ): AuthResponse
+
     @GET("api/{username}/location/devices/status")
     suspend fun getDeviceList(@Path("username") username: String): List<DeviceStatusResponse>
 
@@ -137,6 +177,12 @@ interface LocationApiService {
 
     @GET("api/{username}/status")
     suspend fun checkFullStatus(@Path("username") username: String): FullStatus
+
+    @POST("api/{username}/lost-mode")
+    suspend fun setLostMode(
+        @Path("username") username: String,
+        @Body request: LostModeRequest
+    ): AuthResponse
 
     companion object {
         // Updated to use ngrok for global connectivity (works on 4G/LTE/Any Wi-Fi)

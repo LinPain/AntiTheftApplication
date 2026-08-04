@@ -58,6 +58,10 @@ fun DashboardScreen(
     val uriHandler = LocalUriHandler.current
     val securityPrefs = remember { SecurityPrefs(context) }
     val username = securityPrefs.username.collectAsState(initial = "guest").value ?: "guest"
+    val isLostMode = securityPrefs.isLostModeActive.collectAsState(initial = false).value
+    val isRemoteLocked = securityPrefs.isRemoteLockdownActive.collectAsState(initial = false).value
+    val isLocked = isLostMode || isRemoteLocked
+
     val authToken = securityPrefs.authToken.collectAsState(initial = null).value
     val failedUnlockCount = securityPrefs.failedUnlockCount.collectAsState(initial = 0).value
     val isDeviceTrusted = securityPrefs.isDeviceTrusted.collectAsState(initial = false).value
@@ -149,18 +153,20 @@ fun DashboardScreen(
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
                     }
-                    IconButton(onClick = {
-                        scope.launch {
-                            securityPrefs.setLiveTracking(false)
-                            context.stopService(Intent(context, LocationService::class.java))
-                            context.stopService(Intent(context, AlarmService::class.java))
-                            securityPrefs.setRememberMe(false)
-                            securityPrefs.setLocalPin(null)
-                            securityPrefs.clearAuthData()
-                            onLogout()
+                    if (!isLocked) {
+                        IconButton(onClick = {
+                            scope.launch {
+                                securityPrefs.setLiveTracking(false)
+                                context.stopService(Intent(context, LocationService::class.java))
+                                context.stopService(Intent(context, AlarmService::class.java))
+                                securityPrefs.setRememberMe(false)
+                                securityPrefs.setLocalPin(null)
+                                securityPrefs.clearAuthData()
+                                onLogout()
+                            }
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout")
                         }
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

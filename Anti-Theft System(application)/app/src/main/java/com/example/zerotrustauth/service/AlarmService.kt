@@ -19,8 +19,11 @@ import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.example.zerotrustauth.MainActivity
 import com.example.zerotrustauth.network.LocationApiService
+import com.example.zerotrustauth.network.SecurityEventRequest
 import com.example.zerotrustauth.data.SecurityPrefs
+import com.example.zerotrustauth.logic.FlashlightHelper
 import com.example.zerotrustauth.logic.WearableAlarmSyncModel
+import com.example.zerotrustauth.network.FullStatus
 import io.socket.client.IO
 import io.socket.client.Socket
 import kotlinx.coroutines.*
@@ -80,8 +83,15 @@ class AlarmService : Service() {
         scope.launch {
             val username = prefs.username.first()
             val token = prefs.authToken.first()
-            if (username == null || username == "guest" || token == null) return@launch
+            
+            if (username == null || username == "guest" || token == null) {
+                Log.w("AlarmService", "Socket skip: No credentials")
+                return@launch
+            }
 
+            if (socket?.connected() == true) return@launch
+
+            Log.i("AlarmService", "Initializing socket for $username")
             try {
                 val opts = IO.Options().apply {
                     auth = mapOf("token" to token)
@@ -96,7 +106,29 @@ class AlarmService : Service() {
                     LocationService.triggerImmediateUpload(this@AlarmService)
                 }
 
-                socket?.on("statusUpdate") { _ ->
+                socket?.on("flashlightCommand") { args ->
+                    val data = args[0] as? org.json.JSONObject
+                    val active = data?.optBoolean("active") ?: false
+                    FlashlightHelper.toggleFlash(applicationContext, active)
+                }
+
+                socket?.on("wipeCommand") {
+                    Log.w("AlarmService", "REMOTE WIPE COMMAND RECEIVED")
+                    val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
+                    val adminComponent = android.content.ComponentName(applicationContext, com.example.zerotrustauth.receiver.SecurityAdminReceiver::class.java)
+                    
+                    if (dpm.isAdminActive(adminComponent)) {
+                        try {
+                            dpm.wipeData(0)
+                        } catch (e: Exception) {
+                            Log.e("AlarmService", "Wipe failed: ${e.message}")
+                        }
+                    } else {
+                        Log.e("AlarmService", "Cannot wipe: Not a device admin!")
+                    }
+                }
+
+            socket?.on("statusUpdate") { _ ->
                     Log.d("AlarmService", "Syncing status via socket")
                     scope.launch {
                         syncFullStatus(username, token)
@@ -126,7 +158,8 @@ class AlarmService : Service() {
     private suspend fun syncFullStatus(username: String, token: String) {
         try {
             val status = LocationApiService.create(token).checkFullStatus(username)
-            
+            Log.d("AlarmService", "Sync result - Alarm: ${status.alarm.active}, Lost: ${status.lostMode?.active}")
+
             if (status.alarm.active && !isAlarmPlaying) playAlarm()
             else if (!status.alarm.active && isAlarmPlaying) stopAlarm()
 
@@ -233,7 +266,14 @@ class AlarmService : Service() {
             val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             am.setStreamVolume(AudioManager.STREAM_ALARM, am.getStreamMaxVolume(AudioManager.STREAM_ALARM), 0)
             
-            scope.launch { WearableAlarmSyncModel.syncAlarmStatus(this@AlarmService, true) }
+            scope.launch { 
+                WearableAlarmSyncModel.syncAlarmStatus(this@AlarmService, true) 
+                val user = prefs.username.first()?.lowercase()
+                val token = prefs.authToken.first()
+                if (user != null && token != null) {
+                    LocationApiService.create(token).reportSecurityEvent(user, SecurityEventRequest("ALARM_STARTED_ON_DEVICE"))
+                }
+            }
         } catch (e: Exception) { isAlarmPlaying = false }
     }
 
@@ -242,7 +282,14 @@ class AlarmService : Service() {
         mediaPlayer?.stop()
         mediaPlayer?.release()
         mediaPlayer = null
-        scope.launch { WearableAlarmSyncModel.syncAlarmStatus(this@AlarmService, false) }
+        scope.launch { 
+            WearableAlarmSyncModel.syncAlarmStatus(this@AlarmService, false) 
+            val user = prefs.username.first()?.lowercase()
+            val token = prefs.authToken.first()
+            if (user != null && token != null) {
+                LocationApiService.create(token).reportSecurityEvent(user, SecurityEventRequest("ALARM_STOPPED_ON_DEVICE"))
+            }
+        }
     }
 
     private fun forceOpenApp() {

@@ -348,6 +348,10 @@ fun AppNavigation() {
 
     val lostMsg = securityPrefs.lostModeMessage.collectAsState(initial = "LOST").value
     val lostPhone = securityPrefs.lostModePhone.collectAsState(initial = "").value
+    val ownerName = securityPrefs.ownerName.collectAsState(initial = "").value
+    val ownerPhone = securityPrefs.ownerPhone.collectAsState(initial = "").value
+    val ownerEmail = securityPrefs.ownerEmail.collectAsState(initial = "").value
+
     val isOutsideSafeZone = securityPrefs.isOutsideSafeZone.collectAsState(initial = false).value
     val scope = rememberCoroutineScope()
     
@@ -431,7 +435,9 @@ fun AppNavigation() {
         composable("lost-mode") { 
             LostModeScreen(
                 message = lostMsg, 
-                phoneNumber = lostPhone
+                phoneNumber = if (lostPhone.isNotBlank()) lostPhone else (ownerPhone ?: ""),
+                ownerName = ownerName ?: "",
+                ownerEmail = ownerEmail ?: ""
             ) 
         }
         composable("antitheft") {

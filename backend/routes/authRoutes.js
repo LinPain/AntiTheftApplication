@@ -189,7 +189,14 @@ router.post('/verify-otp', async (req, res) => {
         const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '1h' });
 
         await OTPLog.deleteOne({ _id: log._id });
-        res.json({ message: 'Login successful', token, username: user.username });
+        res.json({
+            message: 'Login successful',
+            token,
+            username: user.username,
+            name: user.name,
+            phone: user.phone,
+            email: user.email
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -258,6 +265,22 @@ router.post('/reset-password', async (req, res) => {
         res.json({ message: 'Mật khẩu đã được thay đổi thành công!' });
     } catch (error) {
         res.status(401).json({ error: 'Phiên làm việc hết hạn hoặc không hợp lệ' });
+    }
+});
+
+// Change Password (while logged in)
+router.post('/change-password', async (req, res) => {
+    try {
+        const { username, oldPassword, newPassword } = req.body;
+        const user = await User.findOne({ username: username.toLowerCase() });
+        if (!user || !(await bcrypt.compare(oldPassword, user.password))) {
+            return res.status(401).json({ error: 'Mật khẩu cũ không chính xác' });
+        }
+        user.password = await bcrypt.hash(newPassword, 10);
+        await user.save();
+        res.json({ message: 'Đổi mật khẩu thành công!' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 

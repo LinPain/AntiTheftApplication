@@ -41,6 +41,9 @@ class SecurityPrefs(context: Context) {
         val IS_OUTSIDE_SAFE_ZONE = booleanPreferencesKey("is_outside_safe_zone")
         val REMEMBER_ME = booleanPreferencesKey("remember_me")
         val LOCAL_PIN = stringPreferencesKey("local_pin")
+        val OWNER_NAME = stringPreferencesKey("owner_name")
+        val OWNER_PHONE = stringPreferencesKey("owner_phone")
+        val OWNER_EMAIL = stringPreferencesKey("owner_email")
     }
 
     val lastSimId: Flow<String?> = safeContext.dataStore.data.map { it[LAST_SIM_ID] }.distinctUntilChanged()
@@ -60,6 +63,9 @@ class SecurityPrefs(context: Context) {
     val isOutsideSafeZone: Flow<Boolean> = safeContext.dataStore.data.map { it[IS_OUTSIDE_SAFE_ZONE] ?: false }.distinctUntilChanged()
     val isRememberMeEnabled: Flow<Boolean> = safeContext.dataStore.data.map { it[REMEMBER_ME] ?: false }.distinctUntilChanged()
     val localPin: Flow<String?> = safeContext.dataStore.data.map { it[LOCAL_PIN] }.distinctUntilChanged()
+    val ownerName: Flow<String?> = safeContext.dataStore.data.map { it[OWNER_NAME] }.distinctUntilChanged()
+    val ownerPhone: Flow<String?> = safeContext.dataStore.data.map { it[OWNER_PHONE] }.distinctUntilChanged()
+    val ownerEmail: Flow<String?> = safeContext.dataStore.data.map { it[OWNER_EMAIL] }.distinctUntilChanged()
 
     suspend fun setRememberMe(enabled: Boolean) {
         safeContext.dataStore.edit { it[REMEMBER_ME] = enabled }
@@ -100,10 +106,13 @@ class SecurityPrefs(context: Context) {
         safeContext.dataStore.edit { it[IS_DEVICE_TRUSTED] = trusted }
     }
 
-    suspend fun saveAuthData(token: String?, username: String?) {
+    suspend fun saveAuthData(token: String?, username: String?, name: String? = null, phone: String? = null, email: String? = null) {
         safeContext.dataStore.edit {
             if (token != null) it[AUTH_TOKEN] = token
             if (username != null) it[USERNAME] = username
+            if (name != null) it[OWNER_NAME] = name
+            if (phone != null) it[OWNER_PHONE] = phone
+            if (email != null) it[OWNER_EMAIL] = email
         }
     }
 
@@ -111,6 +120,9 @@ class SecurityPrefs(context: Context) {
         safeContext.dataStore.edit {
             it.remove(AUTH_TOKEN)
             it.remove(USERNAME)
+            it.remove(OWNER_NAME)
+            it.remove(OWNER_PHONE)
+            it.remove(OWNER_EMAIL)
         }
     }
 

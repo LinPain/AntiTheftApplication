@@ -20,13 +20,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
+import com.example.zerotrustauth.ui.components.QrCodeView
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
 fun LostModeScreen(
     message: String,
-    phoneNumber: String
+    phoneNumber: String,
+    ownerName: String = "",
+    ownerEmail: String = ""
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -86,8 +89,23 @@ fun LostModeScreen(
                     textAlign = TextAlign.Center
                 )
 
-                if (phoneNumber.isNotEmpty()) {
+                if (ownerName.isNotBlank()) {
                     Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Chủ sở hữu:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Gray
+                    )
+                    Text(
+                        text = ownerName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black
+                    )
+                }
+
+                if (phoneNumber.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "Vui lòng liên hệ:",
                         style = MaterialTheme.typography.labelSmall,
@@ -100,6 +118,33 @@ fun LostModeScreen(
                         color = Color(0xFFE53935)
                     )
                 }
+
+                if (ownerEmail.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Email:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Gray
+                    )
+                    Text(
+                        text = ownerEmail,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.DarkGray
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                // Add QR Code for quick contact
+                val contactInfo = "TEL:$phoneNumber\nEMAIL:$ownerEmail\nNAME:$ownerName"
+                QrCodeView(content = contactInfo)
+                
+                Text(
+                    text = "Quét để liên hệ chủ sở hữu",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
             }
         }
 
@@ -175,7 +220,25 @@ fun LostModeScreen(
                                 val prefs = com.example.zerotrustauth.data.SecurityPrefs(context)
                                 val correctPin = prefs.localPin.first()
                                 if (pin == correctPin) {
+                                    // 1. Clear local locks
                                     prefs.clearAllLocks()
+
+                                    // 2. IMPORTANT: Update backend so it doesn't re-lock us on next sync
+                                    val token = prefs.authToken.first()
+                                    val username = prefs.username.first()?.lowercase()?.trim()
+                                    if (token != null && username != null) {
+                                        try {
+                                            val api = com.example.zerotrustauth.network.LocationApiService.create(token)
+                                            // Tell server the owner manually unlocked
+                                            api.notifyGenericAlert(username, com.example.zerotrustauth.network.GenericAlertRequest("OWNER_UNLOCKED_DEVICE", emptyMap()))
+                                            
+                                            // Disable Lost Mode on server
+                                            api.setLostMode(username, com.example.zerotrustauth.network.LostModeRequest(active = false))
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("LostMode", "Failed to sync unlock to server: ${e.message}")
+                                        }
+                                    }
+
                                     showUnlockDialog = false
                                 } else {
                                     error = "Mã PIN không chính xác"

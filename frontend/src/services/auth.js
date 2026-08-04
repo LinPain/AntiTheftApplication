@@ -2,11 +2,23 @@ const CURRENT_KEY = "sat_current_user";
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 
 async function request(path, body) {
+  const headers = {
+    "Content-Type": "application/json",
+  };
+
+  const rawUser = localStorage.getItem(CURRENT_KEY);
+  if (rawUser) {
+    try {
+      const user = JSON.parse(rawUser);
+      if (user.token) {
+        headers["Authorization"] = `Bearer ${user.token}`;
+      }
+    } catch (e) {}
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(body),
   });
 
@@ -22,36 +34,26 @@ async function request(path, body) {
   }
 
   if (!response.ok) {
-    throw new Error(data.message || "Request failed");
+    throw new Error(data.message || data.error || "Request failed");
   }
   return data;
 }
 
-export async function startRegistration({ name, email, phone, password, method }) {
-  const result = await request("/api/auth/register", {
-    name,
-    email,
-    phone,
-    password,
-    method,
-  });
-  return result;
+export async function startRegistration({ username, password, email }) {
+  return await request("/api/auth/register", { username, password, email });
 }
 
-export async function verifyRegistrationOtp({ email, otp }) {
-  const result = await request("/api/auth/verify-registration", { username: email, otp });
-  return result;
+export async function verifyRegistrationOtp({ username, otp }) {
+  return await request("/api/auth/verify-registration", { username, otp });
 }
 
-export async function resendRegistrationOtp(email, type = "REGISTRATION") {
-  const result = await request("/api/auth/resend-otp", { username: email, type });
-  return result;
+export async function resendRegistrationOtp(username, type = "REGISTRATION") {
+  return await request("/api/auth/resend-otp", { username, type });
 }
 
 export async function login({ email, password }) {
-  const result = await request("/api/auth/login", { username: email, password });
-  // Backend returns mfaRequired if code needed, or token if successful
-  return result;
+  // Mapping email field to username for backend compatibility
+  return await request("/api/auth/login", { username: email, password, riskScore: 0 });
 }
 
 export async function verifyLoginOtp({ username, otp }) {
@@ -70,8 +72,14 @@ export async function resetPassword(resetToken, newPassword) {
   return await request("/api/auth/reset-password", { resetToken, newPassword });
 }
 
+export async function changePassword({ username, oldPassword, newPassword }) {
+  return await request("/api/auth/change-password", { username, oldPassword, newPassword });
+}
+
 export function logout() {
   localStorage.removeItem(CURRENT_KEY);
+  // Remove navigation and event logic from here to keep it a pure service.
+  // The UI component will handle the redirection.
 }
 
 export function getCurrentUser() {
@@ -83,14 +91,6 @@ export function getCurrentUser() {
   }
 }
 
-export function changePassword() {
-  throw new Error("Change password must be implemented with backend support");
-}
-
-export function sendPasswordReset() {
-  throw new Error("Password reset must be implemented with backend support");
-}
-
 export default {
   startRegistration,
   verifyRegistrationOtp,
@@ -98,4 +98,9 @@ export default {
   login,
   logout,
   getCurrentUser,
+  changePassword,
+  forgotPassword,
+  verifyReset,
+  resetPassword,
+  verifyLoginOtp,
 };

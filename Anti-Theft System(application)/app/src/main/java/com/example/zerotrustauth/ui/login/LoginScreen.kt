@@ -189,8 +189,14 @@ fun LoginScreen(
                                             securityPrefs.setRememberMe(rememberMe)
                                             onNavigateToMFA(response.username ?: username)
                                         } else {
-                                            // Ensure data is saved BEFORE navigation
-                                            securityPrefs.saveAuthData(response.token, response.username ?: username)
+                                            // Ensure all owner data is saved BEFORE navigation
+                                            securityPrefs.saveAuthData(
+                                                token = response.token, 
+                                                username = response.username ?: username,
+                                                name = response.name,
+                                                phone = response.phone,
+                                                email = response.email
+                                            )
                                             securityPrefs.setRememberMe(rememberMe)
                                             
                                             if (rememberMe) {

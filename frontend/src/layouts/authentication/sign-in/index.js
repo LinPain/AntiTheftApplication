@@ -1,85 +1,75 @@
-/**
-=========================================================
-* Material Dashboard 2 React - v2.2.0
-=========================================================
-
-* Product Page: https://www.creative-tim.com/product/material-dashboard-react
-* Copyright 2023 Creative Tim (https://www.creative-tim.com)
-
-Coded by www.creative-tim.com
-
- =========================================================
-
-* The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-*/
-
+/* eslint-disable react/prop-types, prettier/prettier */
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import auth from "services/auth";
+import { Link, useNavigate } from "react-router-dom";
 import * as yup from "yup";
 
-// react-router-dom components
-import { Link } from "react-router-dom";
+import Alert from "@mui/material/Alert";
+import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 
-// @mui material components
-import Card from "@mui/material/Card";
-import Switch from "@mui/material/Switch";
-import Grid from "@mui/material/Grid";
-import MuiLink from "@mui/material/Link";
+import auth from "services/auth";
+import SentinelAuthLayout from "layouts/sentinel/SentinelAuthLayout";
+import { IconGlyph, colors, fonts, textStyles } from "layouts/sentinel";
+import { useLanguage, t } from "utils/i18n";
 
-// @mui icons
-import FacebookIcon from "@mui/icons-material/Facebook";
-import GitHubIcon from "@mui/icons-material/GitHub";
-import GoogleIcon from "@mui/icons-material/Google";
+const fieldSx = {
+  "& .MuiInputLabel-root": { color: colors.textMuted },
+  "& .MuiInputLabel-root.Mui-focused": { color: colors.cyan },
+  "& .MuiOutlinedInput-root": {
+    borderRadius: "0px",
+    color: colors.textPrimary,
+    backgroundColor: `${colors.void}8C`,
+    "& fieldset": { borderColor: colors.line },
+    "&:hover fieldset": { borderColor: `${colors.cyan}80` },
+    "&.Mui-focused fieldset": { borderColor: colors.cyan },
+  },
+};
 
-// Material Dashboard 2 React components
-import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
-import MDInput from "components/MDInput";
-import MDButton from "components/MDButton";
-
-// Authentication layout components
-import BasicLayout from "layouts/authentication/components/BasicLayout";
-
-// Images
-import bgImage from "assets/images/bg-sign-in-basic.jpeg";
-
-import { triggerDiscoveryPulse } from "services/device";
-
-function Basic() {
-  const [rememberMe, setRememberMe] = useState(false);
-
-  const handleSetRememberMe = () => setRememberMe(!rememberMe);
-
+function SignIn() {
   const navigate = useNavigate();
-
-  const [email, setEmail] = useState("");
+  useLanguage();
+  const [rememberMe, setRememberMe] = useState(() => {
+    return localStorage.getItem("sat_remember_me") === "true";
+  });
+  const [email, setEmail] = useState(() => {
+    return localStorage.getItem("sat_remember_email") || "";
+  });
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setError("");
-    // validate
-    const schema = yup.object({
-      email: yup.string().email("Invalid email").required("Email is required"),
-      password: yup
-        .string()
-        .min(6, "Password must be at least 6 characters")
-        .required("Password is required"),
-    });
-    try {
-      schema.validateSync({ email, password }, { abortEarly: false });
-    } catch (validationError) {
-      setError(validationError.errors.join("; "));
-      return;
+
+    if (rememberMe) {
+      localStorage.setItem("sat_remember_email", email.trim());
+      localStorage.setItem("sat_remember_me", "true");
+    } else {
+      localStorage.removeItem("sat_remember_email");
+      localStorage.setItem("sat_remember_me", "false");
     }
 
     try {
-      const response = await auth.login({ email, password });
+      yup
+        .object({
+          email: yup
+            .string()
+            .email(t("validationInvalidEmail", "Invalid email"))
+            .required(t("validationEmailRequired", "Email is required")),
+          password: yup
+            .string()
+            .min(6, t("validationPasswordTooShort", "Password must be at least 6 characters"))
+            .required(t("validationPasswordRequired", "Password is required")),
+        })
+        .validateSync({ email, password }, { abortEarly: false });
+      const response = await auth.login({ email: email.trim(), password });
 
       if (response.mfaRequired) {
-        navigate("/authentication/mfa", { state: { username: response.username } });
+        navigate("/authentication/mfa", { state: { username: response.username || email.trim() } });
         return;
       }
 
@@ -87,132 +77,114 @@ function Basic() {
       const user = { username: response.username, token: response.token };
       localStorage.setItem("sat_current_user", JSON.stringify(user));
 
-      // Auto-register website
-      try {
-        await triggerDiscoveryPulse(user.username, user.token);
-      } catch (pulseError) {
-        console.error("Auto-discovery failed:", pulseError);
-      }
-
-      navigate("/account");
-    } catch (err) {
-      setError(err.message || "Login failed");
+      navigate("/map");
+    } catch (validationError) {
+      setError(
+        validationError.errors
+          ? validationError.errors.join("; ")
+          : validationError.message || "Login failed"
+      );
     }
   };
 
   return (
-    <BasicLayout image={bgImage}>
-      <Card>
-        <MDBox
-          variant="gradient"
-          bgColor="info"
-          borderRadius="lg"
-          coloredShadow="info"
-          mx={2}
-          mt={-3}
-          p={2}
-          mb={1}
-          textAlign="center"
+    <SentinelAuthLayout
+      eyebrow={t("authGateEyebrow")}
+      title={t("signIn")}
+      subtitle={t("authSubtitleSignIn")}
+    >
+      <Stack component="form" spacing={2} onSubmit={handleSubmit}>
+        <TextField
+          id="sign-in-email"
+          label={t("email")}
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          autoComplete="email"
+          fullWidth
+          sx={fieldSx}
+        />
+        <TextField
+          id="sign-in-password"
+          label={t("password")}
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          autoComplete="current-password"
+          fullWidth
+          sx={fieldSx}
+        />
+        {error && (
+          <Alert
+            severity="error"
+            role="alert"
+            sx={{
+              borderRadius: "0px",
+              backgroundColor: `${colors.danger}26`,
+              color: colors.dangerSoft,
+              "& .MuiAlert-icon": { color: "inherit" },
+            }}
+          >
+            {error}
+          </Alert>
+        )}
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={rememberMe}
+              onChange={(event) => setRememberMe(event.target.checked)}
+              sx={{ color: colors.textMuted, "&.Mui-checked": { color: colors.cyan } }}
+            />
+          }
+          label={
+            <Typography variant="caption" sx={{ color: colors.textSecondary }}>
+              {t("rememberMe")}
+            </Typography>
+          }
+        />
+        <Button
+          type="submit"
+          fullWidth
+          variant="outlined"
+          startIcon={<IconGlyph name="login" size={17} />}
+          sx={{
+            borderRadius: "0px",
+            borderColor: `${colors.cyan}80`,
+            color: colors.cyan,
+            py: 1.25,
+            fontWeight: 600,
+            textTransform: "none",
+            "&:hover": { borderColor: colors.cyan, backgroundColor: colors.cyanFaint },
+          }}
         >
-          <MDTypography variant="h4" fontWeight="medium" color="white" mt={1}>
-            Sign in
-          </MDTypography>
-          <Grid container spacing={3} justifyContent="center" sx={{ mt: 1, mb: 2 }}>
-            <Grid item xs={2}>
-              <MDTypography component={MuiLink} href="#" variant="body1" color="white">
-                <FacebookIcon color="inherit" />
-              </MDTypography>
-            </Grid>
-            <Grid item xs={2}>
-              <MDTypography component={MuiLink} href="#" variant="body1" color="white">
-                <GitHubIcon color="inherit" />
-              </MDTypography>
-            </Grid>
-            <Grid item xs={2}>
-              <MDTypography component={MuiLink} href="#" variant="body1" color="white">
-                <GoogleIcon color="inherit" />
-              </MDTypography>
-            </Grid>
-          </Grid>
-        </MDBox>
-
-        <MDBox pt={4} pb={3} px={3}>
-          <MDBox component="form" role="form" onSubmit={handleSubmit}>
-            <MDBox mb={2}>
-              <MDInput
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                type="email"
-                label="Email"
-                fullWidth
-              />
-            </MDBox>
-            <MDBox mb={2}>
-              <MDInput
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                type="password"
-                label="Password"
-                fullWidth
-              />
-            </MDBox>
-
-            {error && (
-              <MDBox mb={2}>
-                <MDTypography color="error">{error}</MDTypography>
-              </MDBox>
-            )}
-
-            <MDBox display="flex" alignItems="center" ml={-1}>
-              <Switch checked={rememberMe} onChange={handleSetRememberMe} />
-              <MDTypography
-                variant="button"
-                fontWeight="regular"
-                color="text"
-                onClick={handleSetRememberMe}
-                sx={{ cursor: "pointer", userSelect: "none", ml: -1 }}
-              >
-                &nbsp;&nbsp;Remember me
-              </MDTypography>
-            </MDBox>
-
-            <MDBox mt={4} mb={1}>
-              <MDButton type="submit" variant="gradient" color="info" fullWidth>
-                sign in
-              </MDButton>
-            </MDBox>
-
-            <MDBox mt={1} mb={1} textAlign="center">
-              <MDTypography
-                component={Link}
-                to="/authentication/forgot-password"
-                variant="button"
-                color="info"
-              >
-                Forgot password?
-              </MDTypography>
-            </MDBox>
-
-            <MDBox mt={3} mb={1} textAlign="center">
-              <MDTypography variant="button" color="text">
-                Don&apos;t have an account?{" "}
-                <MDTypography
-                  component={Link}
-                  to="/authentication/sign-up"
-                  variant="button"
-                  color="info"
-                  fontWeight="medium"
-                  textGradient
-                >
-                  Sign up
-                </MDTypography>
-              </MDTypography>
-            </MDBox>
-          </MDBox>
-        </MDBox>
-      </Card>
-    </BasicLayout>
+          {t("signInSecurely")}
+        </Button>
+        <Stack direction="row" justifyContent="space-between" spacing={2} sx={{ pt: 1 }}>
+          <Typography
+            component={Link}
+            to="/authentication/forgot-password"
+            variant="caption"
+            sx={{
+              ...textStyles.mono,
+              color: colors.textSecondary,
+              textDecoration: "none",
+              "&:hover": { color: colors.cyan },
+            }}
+          >
+            {t("forgotPassword")}
+          </Typography>
+          <Typography
+            component={Link}
+            to="/authentication/sign-up"
+            variant="caption"
+            sx={{ ...textStyles.mono, color: colors.cyan, textDecoration: "none" }}
+          >
+            {t("createIdentity")}
+          </Typography>
+        </Stack>
+      </Stack>
+    </SentinelAuthLayout>
   );
 }
 
-export default Basic;
+export default SignIn;

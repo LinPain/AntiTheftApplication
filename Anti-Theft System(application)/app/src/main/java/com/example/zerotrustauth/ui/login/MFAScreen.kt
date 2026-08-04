@@ -155,7 +155,13 @@ fun MFAScreen(
                                 scope.launch {
                                     try {
                                         val response = apiService.verifyOtp(VerifyOtpRequest(username, otpCode))
-                                        securityPrefs.saveAuthData(response.token, username)
+                                        securityPrefs.saveAuthData(
+                                            token = response.token, 
+                                            username = username,
+                                            name = response.name,
+                                            phone = response.phone,
+                                            email = response.email
+                                        )
                                         isVerifying = false
                                         
                                         if (isRemembered && !hasPin) {

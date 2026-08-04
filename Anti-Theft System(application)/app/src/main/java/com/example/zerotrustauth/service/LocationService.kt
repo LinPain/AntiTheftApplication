@@ -7,16 +7,20 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
+import android.os.BatteryManager
 import android.util.Log
 import android.Manifest
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import com.example.zerotrustauth.network.LocationApiService
 import com.example.zerotrustauth.network.LocationRequest as NetworkLocationRequest
+import com.example.zerotrustauth.network.GenericAlertRequest
 import com.google.android.gms.location.*
 import com.example.zerotrustauth.data.SecurityPrefs
 import com.example.zerotrustauth.logic.LocationHelper
+import com.example.zerotrustauth.logic.RiskEngine
 import androidx.lifecycle.LifecycleService
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
@@ -33,6 +37,8 @@ class LocationService : LifecycleService() {
     private lateinit var prefs: SecurityPrefs
     private lateinit var locationHelper: LocationHelper
     private var isTrackingUpdatesActive = false
+    private var lastBatteryLevel = -1
+    private var isFirstConnection = true
 
     companion object {
         private const val NOTIFICATION_ID = 1234
@@ -78,12 +84,28 @@ class LocationService : LifecycleService() {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         createNotificationChannel()
         isRunning = true
+        
+        // Dynamic Interval Management
+        scope.launch {
+            prefs.isLostModeActive.collect { isLost ->
+                if (isTrackingUpdatesActive) {
+                    withContext(Dispatchers.Main) {
+                        startLocationUpdates(isLost)
+                    }
+                }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         if (!isTrackingUpdatesActive) {
-            startLocationUpdates()
+            scope.launch {
+                val isLost = prefs.isLostModeActive.first()
+                withContext(Dispatchers.Main) {
+                    startLocationUpdates(isLost)
+                }
+            }
             // Send initial discovery pulse
             scope.launch {
                 val token = prefs.authToken.first()
@@ -112,7 +134,7 @@ class LocationService : LifecycleService() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun startLocationUpdates() {
+    private fun startLocationUpdates(isLostMode: Boolean = false) {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             Log.e("LocationService", "Cannot start foreground service: Location permission not granted")
             stopSelf()
@@ -128,15 +150,22 @@ class LocationService : LifecycleService() {
             }
         }
 
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000L).apply {
-            setMinUpdateIntervalMillis(2000L)
+        val interval = if (isLostMode) 30000L else 300000L
+        val minInterval = if (isLostMode) 15000L else 60000L
+
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, interval).apply {
+            setMinUpdateIntervalMillis(minInterval)
+            setMaxUpdateDelayMillis(interval * 2)
         }.build()
+
+        if (::locationCallback.isInitialized) {
+            fusedLocationClient.removeLocationUpdates(locationCallback)
+        }
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
-                // Only process the last location to save battery and network
                 locationResult.lastLocation?.let { location ->
-                    sendLocationToBackend(location.latitude, location.longitude)
+                    sendLocationToBackend(location)
                     checkGeofence(location.latitude, location.longitude)
                 }
             }
@@ -165,8 +194,33 @@ class LocationService : LifecycleService() {
         isTrackingUpdatesActive = true
     }
 
+    private fun checkBattery(username: String, apiService: LocationApiService) {
+        val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { filter ->
+            applicationContext.registerReceiver(null, filter)
+        }
+        val level: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        
+        // Alert if battery drops below 15% and we haven't alerted for this level recently
+        if (level in 1..15 && level != lastBatteryLevel) {
+            lastBatteryLevel = level
+            scope.launch {
+                try {
+                    apiService.notifyGenericAlert(username, GenericAlertRequest("LOW_BATTERY", mapOf(
+                        "deviceName" to locationHelper.getDeviceName(),
+                        "batteryLevel" to level
+                    )))
+                } catch (e: Exception) {
+                    Log.e("LocationService", "Battery alert failed")
+                }
+            }
+        } else if (level > 20) {
+            lastBatteryLevel = -1 // Reset alert trigger when battery is charged
+        }
+    }
+
     private fun checkGeofence(lat: Double, lon: Double) {
         scope.launch {
+            val username = prefs.username.first()?.trim()?.lowercase() ?: return@launch
             val safeLat = prefs.safeZoneLat.first()
             val safeLon = prefs.safeZoneLon.first()
             val radius = prefs.safeZoneRadius.first()
@@ -179,16 +233,25 @@ class LocationService : LifecycleService() {
                 val currentlyOutside = prefs.isOutsideSafeZone.first()
                 if (isOutside != currentlyOutside) {
                     prefs.setOutsideSafeZone(isOutside)
-                }
-                
-                if (isOutside) {
-                    Log.w("LocationService", "OUTSIDE SAFE ZONE! Dist: ${results[0]}m")
+                    
+                    if (isOutside) {
+                        Log.w("LocationService", "OUTSIDE SAFE ZONE! Dist: ${results[0]}m")
+                        val token = prefs.authToken.first()
+                        if (token != null) {
+                            val apiService = LocationApiService.create(token)
+                            apiService.notifyGenericAlert(username, GenericAlertRequest("SIGNIFICANT_LOCATION_CHANGE", mapOf(
+                                "latitude" to lat,
+                                "longitude" to lon,
+                                "distance" to results[0]
+                            )))
+                        }
+                    }
                 }
             }
         }
     }
 
-    private fun sendLocationToBackend(lat: Double, lon: Double) {
+    private fun sendLocationToBackend(location: android.location.Location) {
         scope.launch {
             try {
                 val token = prefs.authToken.first()
@@ -198,23 +261,61 @@ class LocationService : LifecycleService() {
                     return@launch
                 }
                 
-                val apiService = LocationApiService.create(token)
                 val cleanUsername = username.trim().lowercase()
+                val apiService = LocationApiService.create(token)
                 
+                if (isFirstConnection) {
+                    isFirstConnection = false
+                    apiService.notifyGenericAlert(cleanUsername, GenericAlertRequest("DEVICE_RECONNECTED", mapOf("deviceName" to locationHelper.getDeviceName())))
+                }
+                
+                checkBattery(cleanUsername, apiService)
+
+                val riskScore = RiskEngine.calculateRiskScore(
+                    isTrustedDevice = true,
+                    isOutsideSafeZone = prefs.isOutsideSafeZone.first(),
+                    failedUnlockAttempts = prefs.failedUnlockCount.first()
+                )
+
                 apiService.sendLocation(
                     username = cleanUsername,
                     location = NetworkLocationRequest(
                         deviceId = locationHelper.getDeviceId(),
                         deviceName = locationHelper.getDeviceName(),
-                        latitude = lat,
-                        longitude = lon
+                        latitude = location.latitude,
+                        longitude = location.longitude,
+                        accuracy = location.accuracy,
+                        speed = location.speed,
+                        timestamp = location.time,
+                        batteryLevel = getBatteryLevel(),
+                        isCharging = isBatteryCharging(),
+                        manufacturer = android.os.Build.MANUFACTURER,
+                        model = android.os.Build.MODEL,
+                        androidVersion = android.os.Build.VERSION.RELEASE,
+                        apiLevel = android.os.Build.VERSION.SDK_INT,
+                        riskScore = riskScore
                     )
                 )
-                Log.d("LocationService", "GPS Upload success for $cleanUsername: $lat, $lon")
+                Log.d("LocationService", "GPS Telemetry success for $cleanUsername")
             } catch (e: Exception) {
-                Log.e("LocationService", "GPS Upload failed: ${e.message}")
+                Log.e("LocationService", "GPS Telemetry failed: ${e.message}")
             }
         }
+    }
+
+    private fun getBatteryLevel(): Int {
+        val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { filter ->
+            applicationContext.registerReceiver(null, filter)
+        }
+        return batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+    }
+
+    private fun isBatteryCharging(): Boolean {
+        val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { filter ->
+            applicationContext.registerReceiver(null, filter)
+        }
+        val status = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+        return status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
     }
 
     private fun sendImmediateLocation(apiService: LocationApiService, username: String) {
@@ -249,7 +350,16 @@ class LocationService : LifecycleService() {
                                 deviceId = locationHelper.getDeviceId(),
                                 deviceName = locationHelper.getDeviceName(),
                                 latitude = it.latitude,
-                                longitude = it.longitude
+                                longitude = it.longitude,
+                                accuracy = it.accuracy,
+                                speed = it.speed,
+                                timestamp = it.time,
+                                batteryLevel = getBatteryLevel(),
+                                isCharging = isBatteryCharging(),
+                                manufacturer = android.os.Build.MANUFACTURER,
+                                model = android.os.Build.MODEL,
+                                androidVersion = android.os.Build.VERSION.RELEASE,
+                                apiLevel = android.os.Build.VERSION.SDK_INT
                             )
                         )
                         Log.d("LocationService", "Real GPS location uploaded for $cleanUsername: ${it.latitude}, ${it.longitude}")

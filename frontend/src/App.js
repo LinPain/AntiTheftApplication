@@ -43,15 +43,23 @@ import rtlPlugin from "stylis-plugin-rtl";
 import { CacheProvider } from "@emotion/react";
 import createCache from "@emotion/cache";
 
-// Material Dashboard 2 React routes
-import routes from "routes";
-
 // Material Dashboard 2 React contexts
 import { useMaterialUIController, setMiniSidenav, setOpenConfigurator } from "context";
 
 // Images
 import brandWhite from "assets/images/logo-ct.png";
 import brandDark from "assets/images/logo-ct-dark.png";
+import auth from "services/auth";
+import { useLanguage } from "utils/i18n";
+import { getLocalizedRoutes } from "routes";
+
+const ProtectedRoute = ({ children }) => {
+  const user = auth.getCurrentUser();
+  if (!user) {
+    return <Navigate to="/authentication/sign-in" />;
+  }
+  return children;
+};
 
 export default function App() {
   const [controller, dispatch] = useMaterialUIController();
@@ -68,6 +76,25 @@ export default function App() {
   const [onMouseEnter, setOnMouseEnter] = useState(false);
   const [rtlCache, setRtlCache] = useState(null);
   const { pathname } = useLocation();
+  const { language } = useLanguage();
+  const localizedRoutes = useMemo(() => getLocalizedRoutes(language), [language]);
+  const sentinelRoutes = [
+    "/",
+    "/sentinel",
+    "/account",
+    "/profile-account",
+    "/devices",
+    "/map",
+    "/history",
+  ];
+  const authRoutes = [
+    "/authentication/sign-in",
+    "/authentication/sign-up",
+    "/authentication/forgot-password",
+    "/authentication/reset-password",
+  ];
+  const isSentinelRoute = sentinelRoutes.includes(pathname);
+  const isAuthRoute = authRoutes.includes(pathname) || pathname.startsWith("/authentication/");
 
   // Cache for the rtl
   useMemo(() => {
@@ -116,7 +143,14 @@ export default function App() {
       }
 
       if (route.route) {
-        return <Route exact path={route.route} element={route.component} key={route.key} />;
+        const isAuthRoute = route.route.startsWith("/authentication/");
+        const element = isAuthRoute ? (
+          route.component
+        ) : (
+          <ProtectedRoute>{route.component}</ProtectedRoute>
+        );
+
+        return <Route exact path={route.route} element={element} key={route.key} />;
       }
 
       return null;
@@ -150,13 +184,13 @@ export default function App() {
     <CacheProvider value={rtlCache}>
       <ThemeProvider theme={darkMode ? themeDarkRTL : themeRTL}>
         <CssBaseline />
-        {layout === "dashboard" && (
+        {layout === "dashboard" && !isSentinelRoute && !isAuthRoute && (
           <>
             <Sidenav
               color={sidenavColor}
               brand={(transparentSidenav && !darkMode) || whiteSidenav ? brandDark : brandWhite}
               brandName="Smart Anti-Theft"
-              routes={routes}
+              routes={localizedRoutes}
               onMouseEnter={handleOnMouseEnter}
               onMouseLeave={handleOnMouseLeave}
             />
@@ -166,21 +200,21 @@ export default function App() {
         )}
         {layout === "vr" && <Configurator />}
         <Routes>
-          {getRoutes(routes)}
-          <Route path="*" element={<Navigate to="/account" />} />
+          {getRoutes(localizedRoutes)}
+          <Route path="*" element={<Navigate to="/authentication/sign-in" />} />
         </Routes>
       </ThemeProvider>
     </CacheProvider>
   ) : (
     <ThemeProvider theme={darkMode ? themeDark : theme}>
       <CssBaseline />
-      {layout === "dashboard" && (
+      {layout === "dashboard" && !isSentinelRoute && !isAuthRoute && (
         <>
           <Sidenav
             color={sidenavColor}
             brand={(transparentSidenav && !darkMode) || whiteSidenav ? brandDark : brandWhite}
             brandName="Smart Anti-Theft"
-            routes={routes}
+            routes={localizedRoutes}
             onMouseEnter={handleOnMouseEnter}
             onMouseLeave={handleOnMouseLeave}
           />
@@ -190,8 +224,8 @@ export default function App() {
       )}
       {layout === "vr" && <Configurator />}
       <Routes>
-        {getRoutes(routes)}
-        <Route path="*" element={<Navigate to="/account" />} />
+        {getRoutes(localizedRoutes)}
+        <Route path="*" element={<Navigate to="/authentication/sign-in" />} />
       </Routes>
     </ThemeProvider>
   );

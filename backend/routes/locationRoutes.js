@@ -2,15 +2,38 @@ const express = require('express');
 const router = express.Router();
 const Location = require('../models/Location');
 
+// Helper shared with server.js
+let getUserState;
+router.setGetUserState = (fn) => { getUserState = fn; };
+
 // POST /api/:username/location - Save new location data
 router.post('/', async (req, res) => {
     try {
         const username = req.username; // From middleware in server.js
-        const { deviceId, deviceName, latitude, longitude } = req.body;
+        const {
+            deviceId, deviceName, latitude, longitude, accuracy, speed, timestamp,
+            batteryLevel, isCharging, networkType, carrier, ipAddress,
+            manufacturer, model, androidVersion, apiLevel,
+            isRooted, isEncryptionEnabled, isDeveloperMode, isUsbDebuggingEnabled, riskScore
+        } = req.body;
+
         console.log(`[GPS] Location received from ${username} (${deviceName || deviceId}): ${latitude}, ${longitude}`);
 
-        const newLocation = new Location({ username, deviceId, deviceName, latitude, longitude });
+        const newLocation = new Location({
+            username, deviceId, deviceName, latitude, longitude, accuracy, speed,
+            batteryLevel, isCharging, networkType, carrier, ipAddress: req.ip,
+            manufacturer, model, androidVersion, apiLevel,
+            isRooted, isEncryptionEnabled, isDeveloperMode, isUsbDebuggingEnabled, riskScore,
+            timestamp: timestamp ? new Date(timestamp) : new Date()
+        });
         await newLocation.save();
+
+        // Update server heartbeat state
+        if (getUserState) {
+            const state = getUserState(username);
+            state.lastPulse = Date.now();
+            state.isOfflineAlertSent = false;
+        }
 
         // Prevent data overflow: Keep only last 100 locations per device
         try {
@@ -44,6 +67,10 @@ router.post('/', async (req, res) => {
                 deviceName,
                 latitude,
                 longitude,
+                accuracy,
+                speed,
+                batteryLevel,
+                isCharging,
                 timestamp: newLocation.timestamp
             });
         }
@@ -78,6 +105,18 @@ router.get('/devices/status', async (req, res) => {
                 deviceName: { $first: "$deviceName" },
                 lastLatitude: { $first: "$latitude" },
                 lastLongitude: { $first: "$longitude" },
+                lastAccuracy: { $first: "$accuracy" },
+                lastSpeed: { $first: "$speed" },
+                batteryLevel: { $first: "$batteryLevel" },
+                isCharging: { $first: "$isCharging" },
+                networkType: { $first: "$networkType" },
+                carrier: { $first: "$carrier" },
+                ipAddress: { $first: "$ipAddress" },
+                manufacturer: { $first: "$manufacturer" },
+                model: { $first: "$model" },
+                androidVersion: { $first: "$androidVersion" },
+                isRooted: { $first: "$isRooted" },
+                riskScore: { $first: "$riskScore" },
                 lastTimestamp: { $first: "$timestamp" }
             }}
         ]);

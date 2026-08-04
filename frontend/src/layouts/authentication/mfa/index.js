@@ -1,14 +1,27 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import Card from "@mui/material/Card";
-import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
-import MDInput from "components/MDInput";
-import MDButton from "components/MDButton";
-import CoverLayout from "layouts/authentication/components/CoverLayout";
-import bgImage from "assets/images/bg-sign-in-basic.jpeg";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Button from "@mui/material/Button";
+import Typography from "@mui/material/Typography";
+import Alert from "@mui/material/Alert";
+
 import auth from "services/auth";
-import { triggerDiscoveryPulse } from "services/device";
+import SentinelAuthLayout from "layouts/sentinel/SentinelAuthLayout";
+import { IconGlyph, colors, textStyles } from "layouts/sentinel";
+
+const fieldSx = {
+  "& .MuiInputLabel-root": { color: colors.textMuted },
+  "& .MuiInputLabel-root.Mui-focused": { color: colors.cyan },
+  "& .MuiOutlinedInput-root": {
+    borderRadius: "0px",
+    color: colors.textPrimary,
+    backgroundColor: `${colors.void}8C`,
+    "& fieldset": { borderColor: colors.line },
+    "&:hover fieldset": { borderColor: `${colors.cyan}80` },
+    "&.Mui-focused fieldset": { borderColor: colors.cyan },
+  },
+};
 
 function MFA() {
   const navigate = useNavigate();
@@ -35,14 +48,7 @@ function MFA() {
       const user = { username: response.username, token: response.token };
       localStorage.setItem("sat_current_user", JSON.stringify(user));
 
-      // Auto-register website
-      try {
-        await triggerDiscoveryPulse(user.username, user.token);
-      } catch (pulseError) {
-        console.error("Auto-discovery failed:", pulseError);
-      }
-
-      navigate("/account");
+      navigate("/map");
     } catch (err) {
       setError(err.message || "Xác thực thất bại");
     } finally {
@@ -62,75 +68,72 @@ function MFA() {
   };
 
   if (!username) {
-    return <MDTypography variant="h6" textAlign="center" py={5}>Lỗi: Không tìm thấy thông tin tài khoản.</MDTypography>;
+    return <Typography variant="h6" textAlign="center" py={5} color="white">Lỗi: Không tìm thấy thông tin tài khoản.</Typography>;
   }
 
   return (
-    <CoverLayout image={bgImage}>
-      <Card>
-        <MDBox
-          variant="gradient"
-          bgColor="info"
-          borderRadius="lg"
-          coloredShadow="info"
-          mx={2}
-          mt={-3}
-          p={3}
-          mb={1}
-          textAlign="center"
+    <SentinelAuthLayout
+      eyebrow="SECURITY / 03"
+      title="Xác thực đăng nhập"
+      subtitle={`Nhập mã OTP 6 số đã gửi tới tài khoản ${username}.`}
+    >
+      <Stack component="form" spacing={3} onSubmit={handleSubmit}>
+        <TextField
+          id="mfa-otp"
+          label="Mã OTP (6 chữ số)"
+          value={otp}
+          onChange={(e) => setOtp(e.target.value)}
+          fullWidth
+          sx={fieldSx}
+          inputProps={{ style: { textAlign: 'center', letterSpacing: '0.5rem', fontSize: '1.5rem' } }}
+        />
+
+        {error && (
+          <Alert severity="error" sx={{ borderRadius: 0, backgroundColor: `${colors.danger}26`, color: colors.dangerSoft }}>
+            {error}
+          </Alert>
+        )}
+        {msg && (
+          <Alert severity="success" sx={{ borderRadius: 0, backgroundColor: `${colors.teal}26`, color: colors.teal }}>
+            {msg}
+          </Alert>
+        )}
+
+        <Button
+          type="submit"
+          fullWidth
+          variant="outlined"
+          disabled={isLoading}
+          startIcon={<IconGlyph name="verified_user" size={17} />}
+          sx={{
+            borderRadius: "0px",
+            borderColor: `${colors.cyan}80`,
+            color: colors.cyan,
+            py: 1.25,
+            fontWeight: 600,
+            textTransform: "none",
+            "&:hover": { borderColor: colors.cyan, backgroundColor: colors.cyanFaint },
+          }}
         >
-          <MDTypography variant="h4" fontWeight="medium" color="white" mt={1}>
-            Xác thực đăng nhập
-          </MDTypography>
-          <MDTypography display="block" variant="button" color="white" my={1}>
-            Nhập mã OTP 6 số đã gửi tới tài khoản {username}.
-          </MDTypography>
-        </MDBox>
-        <MDBox pt={4} pb={3} px={3}>
-          <MDBox component="form" role="form" onSubmit={handleSubmit}>
-            <MDBox mb={2}>
-              <MDInput
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-                type="text"
-                label="Mã OTP"
-                variant="standard"
-                fullWidth
-              />
-            </MDBox>
+          {isLoading ? "Đang xác thực..." : "Xác nhận"}
+        </Button>
 
-            {error && (
-              <MDBox mb={2}>
-                <MDTypography color="error" variant="caption">{error}</MDTypography>
-              </MDBox>
-            )}
-            {msg && (
-              <MDBox mb={2}>
-                <MDTypography color="success" variant="caption">{msg}</MDTypography>
-              </MDBox>
-            )}
-
-            <MDBox mt={4} mb={1}>
-              <MDButton type="submit" variant="gradient" color="info" fullWidth disabled={isLoading}>
-                {isLoading ? "Đang xác thực..." : "Xác nhận"}
-              </MDButton>
-            </MDBox>
-            <MDBox mt={2} textAlign="center">
-              <MDTypography
-                variant="button"
-                color="info"
-                fontWeight="medium"
-                textGradient
-                sx={{ cursor: "pointer" }}
-                onClick={handleResend}
-              >
-                Gửi lại mã OTP
-              </MDTypography>
-            </MDBox>
-          </MDBox>
-        </MDBox>
-      </Card>
-    </CoverLayout>
+        <Stack direction="row" justifyContent="center" spacing={1}>
+          <Typography
+            variant="caption"
+            sx={{
+              ...textStyles.mono,
+              color: colors.cyan,
+              cursor: "pointer",
+              "&:hover": { textDecoration: "underline" },
+            }}
+            onClick={handleResend}
+          >
+            Gửi lại mã OTP
+          </Typography>
+        </Stack>
+      </Stack>
+    </SentinelAuthLayout>
   );
 }
 

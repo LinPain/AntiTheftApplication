@@ -6,6 +6,8 @@ import android.content.Intent
 import android.util.Log
 import com.example.zerotrustauth.data.SecurityPrefs
 import com.example.zerotrustauth.logic.RiskManager
+import com.example.zerotrustauth.network.LocationApiService
+import com.example.zerotrustauth.network.SecurityEventRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -20,6 +22,16 @@ class SecurityAdminReceiver : DeviceAdminReceiver() {
         val prefs = SecurityPrefs(context)
         scope.launch {
             prefs.incrementFailedUnlock()
+            
+            val failures = prefs.failedUnlockCount.first()
+            
+            scope.launch {
+                val token = prefs.authToken.first()
+                val user = prefs.username.first()?.lowercase()
+                if (token != null && user != null) {
+                    LocationApiService.create(token).reportSecurityEvent(user, SecurityEventRequest("FAILED_PIN_ATTEMPT", "Attempts: $failures"))
+                }
+            }
             
             // Evaluate risk and send alert if needed
             RiskManager.checkAndNotify(context)

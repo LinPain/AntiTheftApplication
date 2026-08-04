@@ -228,6 +228,17 @@ app.post("/api/auth/login", (req, res) => {
   }
 });
 
+app.post("/api/auth/reset-demo", (req, res) => {
+  try {
+    const emptyStore = { users: [], pending: {} };
+    saveData(emptyStore);
+    return res.json({ message: "Demo account and virtual device data cleared" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Could not reset demo data" });
+  }
+});
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Backend running on port ${PORT}`);
 });

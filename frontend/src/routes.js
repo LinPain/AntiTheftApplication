@@ -45,14 +45,25 @@ import Account from "layouts/antitheft/Account";
 import Devices from "layouts/antitheft/Devices";
 import MapView from "layouts/antitheft/MapView";
 import History from "layouts/antitheft/History";
+import SecurityActivity from "layouts/antitheft/SecurityActivity";
+import SentinelConsole from "layouts/sentinel";
+import { getLanguage } from "utils/i18n";
 
 // @mui icons
 import Icon from "@mui/material/Icon";
 
-const routes = [
+export const getLocalizedRoutes = (language = getLanguage()) => [
   {
     type: "collapse",
-    name: "Quản lý tài khoản",
+    name: language === "en" ? "Sentinel Console" : "Bảng điều khiển Sentinel",
+    key: "sentinel",
+    icon: <Icon fontSize="small">shield</Icon>,
+    route: "/sentinel",
+    component: <SentinelConsole />,
+  },
+  {
+    type: "collapse",
+    name: language === "en" ? "Account Management" : "Quản lý tài khoản",
     key: "account",
     icon: <Icon fontSize="small">person</Icon>,
     route: "/account",
@@ -60,7 +71,15 @@ const routes = [
   },
   {
     type: "collapse",
-    name: "Thiết bị",
+    name: language === "en" ? "Profile Account" : "Hồ sơ tài khoản",
+    key: "profile-account",
+    icon: <Icon fontSize="small">account_circle</Icon>,
+    route: "/profile-account",
+    component: <Account />,
+  },
+  {
+    type: "collapse",
+    name: language === "en" ? "Devices" : "Thiết bị",
     key: "devices",
     icon: <Icon fontSize="small">devices</Icon>,
     route: "/devices",
@@ -68,7 +87,7 @@ const routes = [
   },
   {
     type: "collapse",
-    name: "Bản đồ",
+    name: language === "en" ? "Map" : "Bản đồ",
     key: "map",
     icon: <Icon fontSize="small">map</Icon>,
     route: "/map",
@@ -76,7 +95,7 @@ const routes = [
   },
   {
     type: "collapse",
-    name: "Lịch sử vị trí",
+    name: language === "en" ? "Location History" : "Lịch sử vị trí",
     key: "history",
     icon: <Icon fontSize="small">history</Icon>,
     route: "/history",
@@ -84,7 +103,15 @@ const routes = [
   },
   {
     type: "collapse",
-    name: "Sign In",
+    name: language === "en" ? "Security Log" : "Nhật ký bảo mật",
+    key: "security-activity",
+    icon: <Icon fontSize="small">security</Icon>,
+    route: "/security-activity",
+    component: <SecurityActivity />,
+  },
+  {
+    type: "collapse",
+    name: language === "en" ? "Sign In" : "Đăng nhập",
     key: "sign-in",
     icon: <Icon fontSize="small">login</Icon>,
     route: "/authentication/sign-in",
@@ -92,7 +119,7 @@ const routes = [
   },
   {
     type: "collapse",
-    name: "Forgot Password",
+    name: language === "en" ? "Forgot Password" : "Quên mật khẩu",
     key: "forgot-password",
     icon: <Icon fontSize="small">help</Icon>,
     route: "/authentication/forgot-password",
@@ -100,7 +127,7 @@ const routes = [
   },
   {
     type: "collapse",
-    name: "Sign Up",
+    name: language === "en" ? "Sign Up" : "Đăng ký",
     key: "sign-up",
     icon: <Icon fontSize="small">assignment</Icon>,
     route: "/authentication/sign-up",
@@ -115,4 +142,5 @@ const routes = [
   },
 ];
 
+const routes = getLocalizedRoutes();
 export default routes;

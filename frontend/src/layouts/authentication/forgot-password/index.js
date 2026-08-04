@@ -1,27 +1,34 @@
+/* eslint-disable react/prop-types, prettier/prettier */
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import Card from "@mui/material/Card";
-import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
-import MDInput from "components/MDInput";
-import MDButton from "components/MDButton";
-import CoverLayout from "layouts/authentication/components/CoverLayout";
-import bgImage from "assets/images/bg-sign-up-cover.jpeg";
-import auth from "services/auth";
+import { Link, useNavigate } from "react-router-dom";
 
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import Card from "@mui/material/Card";
-import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
-import MDInput from "components/MDInput";
-import MDButton from "components/MDButton";
-import CoverLayout from "layouts/authentication/components/CoverLayout";
-import bgImage from "assets/images/bg-sign-up-cover.jpeg";
+import Alert from "@mui/material/Alert";
+import Button from "@mui/material/Button";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
+
 import auth from "services/auth";
+import SentinelAuthLayout from "layouts/sentinel/SentinelAuthLayout";
+import { IconGlyph, colors } from "layouts/sentinel";
+import { useLanguage, t } from "utils/i18n";
+
+const fieldSx = {
+  "& .MuiInputLabel-root": { color: colors.textMuted },
+  "& .MuiInputLabel-root.Mui-focused": { color: colors.cyan },
+  "& .MuiOutlinedInput-root": {
+    borderRadius: "0px",
+    color: colors.textPrimary,
+    backgroundColor: `${colors.void}8C`,
+    "& fieldset": { borderColor: colors.line },
+    "&:hover fieldset": { borderColor: `${colors.cyan}80` },
+    "&.Mui-focused fieldset": { borderColor: colors.cyan },
+  },
+};
 
 function ForgotPassword() {
   const navigate = useNavigate();
+  useLanguage();
   const [step, setStep] = useState(1); // 1: Email, 2: OTP, 3: New Password
   const [identifier, setIdentifier] = useState("");
   const [otp, setOtp] = useState("");
@@ -67,140 +74,106 @@ function ForgotPassword() {
   };
 
   return (
-    <CoverLayout image={bgImage}>
-      <Card>
-        <MDBox
-          variant="gradient"
-          bgColor="info"
-          borderRadius="lg"
-          coloredShadow="success"
-          mx={2}
-          mt={-3}
-          p={3}
-          mb={1}
-          textAlign="center"
-        >
-          <MDTypography variant="h4" fontWeight="medium" color="white" mt={1}>
-            {step === 3 ? "Đặt lại mật khẩu" : "Quên mật khẩu"}
-          </MDTypography>
-          <MDTypography display="block" variant="button" color="white" my={1}>
-            {step === 1 && "Nhập Email hoặc Username để nhận mã OTP."}
-            {step === 2 && `Nhập mã 6 số đã gửi tới tài khoản ${usernameFromServer}.`}
-            {step === 3 && "Vui lòng nhập mật khẩu mới của bạn."}
-          </MDTypography>
-        </MDBox>
-        <MDBox pt={4} pb={3} px={3}>
-          <MDBox component="form" role="form" onSubmit={handleSubmit}>
-            {step === 1 && (
-              <MDBox mb={2}>
-                <MDInput
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  type="text"
-                  label="Email hoặc Username"
-                  variant="standard"
-                  fullWidth
-                />
-              </MDBox>
-            )}
-            {step === 2 && (
-              <MDBox mb={2}>
-                <MDInput
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value)}
-                  type="text"
-                  label="Mã OTP"
-                  variant="standard"
-                  fullWidth
-                />
-              </MDBox>
-            )}
-            {step === 3 && (
-              <>
-                <MDBox mb={2}>
-                  <MDInput
+    <SentinelAuthLayout
+      eyebrow="RECOVERY / 02"
+      title={step === 3 ? "Đặt lại mật khẩu" : "Quên mật khẩu"}
+      subtitle={
+        step === 1 ? "Nhập Email hoặc Username để nhận mã OTP." :
+        step === 2 ? `Nhập mã 6 số đã gửi tới tài khoản ${usernameFromServer}.` :
+        "Vui lòng nhập mật khẩu mới của bạn."
+      }
+    >
+      <Stack component="form" spacing={2} onSubmit={handleSubmit}>
+        {step === 1 && (
+            <TextField
+                id="reset-identifier"
+                label="Email hoặc Username"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                fullWidth
+                sx={fieldSx}
+            />
+        )}
+        {step === 2 && (
+            <TextField
+                id="reset-otp"
+                label="Mã OTP (6 số)"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                inputProps={{ maxLength: 6 }}
+                fullWidth
+                sx={fieldSx}
+            />
+        )}
+        {step === 3 && (
+            <>
+                <TextField
+                    id="new-password"
+                    label="Mật khẩu mới"
+                    type="password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    type="password"
-                    label="Mật khẩu mới"
-                    variant="standard"
                     fullWidth
-                  />
-                </MDBox>
-                <MDBox mb={2}>
-                  <MDInput
+                    sx={fieldSx}
+                />
+                <TextField
+                    id="confirm-password"
+                    label="Xác nhận mật khẩu"
+                    type="password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    type="password"
-                    label="Xác nhận mật khẩu"
-                    variant="standard"
                     fullWidth
-                  />
-                </MDBox>
-              </>
-            )}
+                    sx={fieldSx}
+                />
+            </>
+        )}
 
-            {error && (
-              <MDBox mb={2}>
-                <MDTypography color="error" variant="caption">{error}</MDTypography>
-              </MDBox>
-            )}
-            {msg && (
-              <MDBox mb={2}>
-                <MDTypography color="success" variant="caption">{msg}</MDTypography>
-              </MDBox>
-            )}
+        {error && (
+          <Alert severity="error" sx={{ borderRadius: 0, backgroundColor: `${colors.danger}26`, color: colors.dangerSoft }}>
+            {error}
+          </Alert>
+        )}
+        {msg && (
+          <Alert severity="success" sx={{ borderRadius: 0, backgroundColor: `${colors.cyan}1A`, color: colors.cyan }}>
+            {msg}
+          </Alert>
+        )}
 
-            {step === 2 && (
-              <MDBox mt={2} textAlign="center">
-                <MDTypography
-                  variant="button"
-                  color="info"
-                  fontWeight="medium"
-                  textGradient
-                  sx={{ cursor: "pointer" }}
-                  onClick={async () => {
-                    try {
-                      await auth.resendRegistrationOtp(usernameFromServer, "RESET");
-                      setMsg("Mã OTP mới đã được gửi!");
-                    } catch (e) {
-                      setError("Không thể gửi lại mã.");
-                    }
-                  }}
-                >
-                  Gửi lại mã OTP
-                </MDTypography>
-              </MDBox>
-            )}
-
-            <MDBox mt={4} mb={1}>
-              <MDButton type="submit" variant="gradient" color="info" fullWidth disabled={isLoading}>
-                {step === 1 ? "Tiếp tục" : step === 2 ? "Xác nhận OTP" : "Đặt lại mật khẩu"}
-              </MDButton>
-            </MDBox>
-            <MDBox mt={3} mb={1} textAlign="center">
-              <MDTypography variant="button" color="text">
-                Quay lại&nbsp;
-                <MDTypography
-                  component="a"
-                  href="#"
-                  onClick={() => navigate("/authentication/sign-in")}
-                  variant="button"
-                  color="info"
-                  fontWeight="medium"
-                  textGradient
-                >
-                  Đăng nhập
-                </MDTypography>
-              </MDTypography>
-            </MDBox>
-          </MDBox>
-        </MDBox>
-      </Card>
-    </CoverLayout>
+        <Button
+          type="submit"
+          fullWidth
+          variant="outlined"
+          disabled={isLoading}
+          startIcon={<IconGlyph name={step === 3 ? "vpn_key" : "mark_email_read"} size={17} />}
+          sx={{
+            borderRadius: "0px",
+            borderColor: `${colors.cyan}80`,
+            color: colors.cyan,
+            py: 1.25,
+            fontWeight: 600,
+            textTransform: "none",
+            "&:hover": { borderColor: colors.cyan, backgroundColor: colors.cyanFaint },
+          }}
+        >
+          {step === 1 ? "Tiếp tục" : step === 2 ? "Xác nhận OTP" : "Đặt lại mật khẩu"}
+        </Button>
+        <Typography
+          component={Link}
+          to="/authentication/sign-in"
+          variant="caption"
+          onClick={() => navigate("/authentication/sign-in")}
+          sx={{
+            color: colors.textSecondary,
+            textAlign: "center",
+            textDecoration: "none",
+            "&:hover": { color: colors.cyan },
+          }}
+        >
+          {t("rememberedPassword")}
+        </Typography>
+      </Stack>
+    </SentinelAuthLayout>
   );
 }
-
-export default ForgotPassword;
 
 export default ForgotPassword;
