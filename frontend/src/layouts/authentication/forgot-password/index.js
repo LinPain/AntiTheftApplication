@@ -78,63 +78,75 @@ function ForgotPassword() {
       eyebrow="RECOVERY / 02"
       title={step === 3 ? "Đặt lại mật khẩu" : "Quên mật khẩu"}
       subtitle={
-        step === 1 ? "Nhập Email hoặc Username để nhận mã OTP." :
-        step === 2 ? `Nhập mã 6 số đã gửi tới tài khoản ${usernameFromServer}.` :
-        "Vui lòng nhập mật khẩu mới của bạn."
+        step === 1
+          ? "Nhập Email hoặc Username để nhận mã OTP."
+          : step === 2
+          ? `Nhập mã 6 số đã gửi tới tài khoản ${usernameFromServer}.`
+          : "Vui lòng nhập mật khẩu mới của bạn."
       }
     >
       <Stack component="form" spacing={2} onSubmit={handleSubmit}>
         {step === 1 && (
-            <TextField
-                id="reset-identifier"
-                label="Email hoặc Username"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                fullWidth
-                sx={fieldSx}
-            />
+          <TextField
+            id="reset-identifier"
+            label="Email hoặc Username"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            fullWidth
+            sx={fieldSx}
+          />
         )}
         {step === 2 && (
-            <TextField
-                id="reset-otp"
-                label="Mã OTP (6 số)"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-                inputProps={{ maxLength: 6 }}
-                fullWidth
-                sx={fieldSx}
-            />
+          <TextField
+            id="reset-otp"
+            label="Mã OTP (6 số)"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value)}
+            inputProps={{ maxLength: 6 }}
+            fullWidth
+            sx={fieldSx}
+          />
         )}
         {step === 3 && (
-            <>
-                <TextField
-                    id="new-password"
-                    label="Mật khẩu mới"
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    fullWidth
-                    sx={fieldSx}
-                />
-                <TextField
-                    id="confirm-password"
-                    label="Xác nhận mật khẩu"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    fullWidth
-                    sx={fieldSx}
-                />
-            </>
+          <>
+            <TextField
+              id="new-password"
+              label="Mật khẩu mới"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              fullWidth
+              sx={fieldSx}
+            />
+            <TextField
+              id="confirm-password"
+              label="Xác nhận mật khẩu"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              fullWidth
+              sx={fieldSx}
+            />
+          </>
         )}
 
         {error && (
-          <Alert severity="error" sx={{ borderRadius: 0, backgroundColor: `${colors.danger}26`, color: colors.dangerSoft }}>
+          <Alert
+            severity="error"
+            sx={{
+              borderRadius: 0,
+              backgroundColor: `${colors.danger}26`,
+              color: colors.dangerSoft,
+            }}
+          >
             {error}
           </Alert>
         )}
         {msg && (
-          <Alert severity="success" sx={{ borderRadius: 0, backgroundColor: `${colors.cyan}1A`, color: colors.cyan }}>
+          <Alert
+            severity="success"
+            sx={{ borderRadius: 0, backgroundColor: `${colors.cyan}1A`, color: colors.cyan }}
+          >
             {msg}
           </Alert>
         )}

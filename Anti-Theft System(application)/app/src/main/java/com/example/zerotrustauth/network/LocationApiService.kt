@@ -186,6 +186,7 @@ interface LocationApiService {
 
     companion object {
         // Updated to use ngrok for global connectivity (works on 4G/LTE/Any Wi-Fi)
+        // FOR LOCAL DEMO: If you use ngrok, paste your link here!
         private const val BASE_URL = "https://pardon-resolute-outscore.ngrok-free.dev/"
 
         fun create(authToken: String? = null): LocationApiService {

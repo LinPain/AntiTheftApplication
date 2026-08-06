@@ -13,7 +13,10 @@ Coded by www.creative-tim.com
 * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 */
 
+
+
 import { useState, useEffect, useMemo } from "react";
+import PropTypes from "prop-types";
 
 // react-router components
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
@@ -59,6 +62,10 @@ const ProtectedRoute = ({ children }) => {
     return <Navigate to="/authentication/sign-in" />;
   }
   return children;
+};
+
+ProtectedRoute.propTypes = {
+  children: PropTypes.node.isRequired,
 };
 
 export default function App() {

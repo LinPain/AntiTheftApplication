@@ -77,8 +77,8 @@ function SignUp() {
     }
 
     if (password.length < 8) {
-        setError("Mật khẩu phải có ít nhất 8 ký tự.");
-        return;
+      setError("Mật khẩu phải có ít nhất 8 ký tự.");
+      return;
     }
 
     setPendingRegistration({ username: username.trim(), email: email.trim(), password });
@@ -153,11 +153,7 @@ function SignUp() {
       title={t("createIdentityTitle")}
       subtitle={step === "form" ? t("authSubtitleSignUpForm") : t("authSubtitleSignUpVerify")}
     >
-      <Stack
-        component="form"
-        spacing={2}
-        onSubmit={handlePrimaryAction}
-      >
+      <Stack component="form" spacing={2} onSubmit={handlePrimaryAction}>
         {step === "form" && (
           <>
             <TextField

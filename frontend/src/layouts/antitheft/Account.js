@@ -49,17 +49,18 @@ function Account() {
     setUser(currentUser);
 
     if (currentUser) {
-        setSelectedDevice(localStorage.getItem("sat_device") || "");
-        deviceService.getDeviceList(currentUser.username, currentUser.token)
-            .then(list => {
-                setDeviceList(list);
-                if (list.length > 0 && !localStorage.getItem("sat_device")) {
-                    const firstId = list[0]._id;
-                    setSelectedDevice(firstId);
-                    localStorage.setItem("sat_device", firstId);
-                }
-            })
-            .catch(e => console.error("Account: fetch devices failed", e));
+      setSelectedDevice(localStorage.getItem("sat_device") || "");
+      deviceService
+        .getDeviceList(currentUser.username, currentUser.token)
+        .then((list) => {
+          setDeviceList(list);
+          if (list.length > 0 && !localStorage.getItem("sat_device")) {
+            const firstId = list[0]._id;
+            setSelectedDevice(firstId);
+            localStorage.setItem("sat_device", firstId);
+          }
+        })
+        .catch((e) => console.error("Account: fetch devices failed", e));
     }
   }, []);
 
@@ -118,12 +119,13 @@ function Account() {
   };
 
   const displayName = user?.name || user?.username || t("accountName");
-  const avatarText = displayName
-    .split(" ")
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase() || "??";
+  const avatarText =
+    displayName
+      .split(" ")
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase() || "??";
 
   return (
     <SentinelPageFrame>
@@ -230,7 +232,10 @@ function Account() {
                 <Stack spacing={1.5} sx={{ mt: 2.5 }}>
                   <IdentityRow label={t("fullNameLabel").toUpperCase()} value={displayName} />
                   <IdentityRow label={t("emailChannel").toUpperCase()} value={user.email} />
-                  <IdentityRow label={t("phoneChannel").toUpperCase()} value={user.phone || t("notProvided")} />
+                  <IdentityRow
+                    label={t("phoneChannel").toUpperCase()}
+                    value={user.phone || t("notProvided")}
+                  />
                 </Stack>
               </SentinelSurface>
 
@@ -324,16 +329,20 @@ function Account() {
                     sx={fieldSx}
                   >
                     {deviceList.map((dev) => (
-                        <MenuItem key={dev._id} value={dev._id}>
-                            {dev.deviceName || dev._id}
-                        </MenuItem>
+                      <MenuItem key={dev._id} value={dev._id}>
+                        {dev.deviceName || dev._id}
+                      </MenuItem>
                     ))}
-                    {deviceList.length === 0 && <MenuItem value="">{t("noDevicesFound", "No devices found")}</MenuItem>}
+                    {deviceList.length === 0 && (
+                      <MenuItem value="">{t("noDevicesFound", "No devices found")}</MenuItem>
+                    )}
                   </TextField>
                   <Typography variant="body2" sx={{ color: colors.textSecondary }}>
                     {t("selectedDevice")}:{" "}
                     <Box component="span" sx={{ color: colors.white, fontWeight: 600 }}>
-                      {deviceList.find(d => d._id === selectedDevice)?.deviceName || selectedDevice || "None"}
+                      {deviceList.find((d) => d._id === selectedDevice)?.deviceName ||
+                        selectedDevice ||
+                        "None"}
                     </Box>
                   </Typography>
                 </Stack>

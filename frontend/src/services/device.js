@@ -3,8 +3,8 @@ const API_BASE = process.env.REACT_APP_API_BASE || "";
 async function secureRequest(path, method = "GET", body = null, token = "") {
   const headers = {
     "Content-Type": "application/json",
-    "Authorization": `Bearer ${token}`,
-    "ngrok-skip-browser-warning": "true"
+    Authorization: `Bearer ${token}`,
+    "ngrok-skip-browser-warning": "true",
   };
 
   const options = {
@@ -34,16 +34,26 @@ export async function removeDevice(username, deviceId, token) {
 }
 
 export async function triggerDiscoveryPulse(username, token) {
-  return await secureRequest(`/api/${username}/location`, "POST", {
-    deviceId: "Web-Portal-" + Math.random().toString(36).substring(7),
-    deviceName: "Web Portal",
-    latitude: 0,
-    longitude: 0,
-  }, token);
+  return await secureRequest(
+    `/api/${username}/location`,
+    "POST",
+    {
+      deviceId: "Web-Portal-" + Math.random().toString(36).substring(7),
+      deviceName: "Web Portal",
+      latitude: 0,
+      longitude: 0,
+    },
+    token
+  );
 }
 
 export async function toggleLostMode(username, active, message, phone, token) {
-  return await secureRequest(`/api/${username}/lost-mode`, "POST", { active, message, phoneNumber: phone }, token);
+  return await secureRequest(
+    `/api/${username}/lost-mode`,
+    "POST",
+    { active, message, phoneNumber: phone },
+    token
+  );
 }
 
 export async function toggleAlarm(username, active, token) {
@@ -55,7 +65,12 @@ export async function requestTracking(username, token) {
 }
 
 export async function setGeofence(username, latitude, longitude, radius, token) {
-  return await secureRequest(`/api/${username}/geofence`, "POST", { latitude, longitude, radius }, token);
+  return await secureRequest(
+    `/api/${username}/geofence`,
+    "POST",
+    { latitude, longitude, radius },
+    token
+  );
 }
 
 export async function getSecurityEvents(username, token) {

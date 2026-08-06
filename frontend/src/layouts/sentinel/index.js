@@ -29,7 +29,7 @@ function MapController({ center, zoom }) {
     }
     // Fix rendering issue
     timeout = setTimeout(() => {
-        if (map) map.invalidateSize();
+      if (map) map.invalidateSize();
     }, 500);
 
     return () => clearTimeout(timeout);
@@ -228,7 +228,7 @@ function TopBar() {
     return () => window.removeEventListener("storage", syncUser);
   }, []);
 
-  const accountName = currentUser?.name || "Khách";
+  const accountName = currentUser?.name || currentUser?.username || t("accountName");
 
   return (
     <Box
@@ -292,8 +292,15 @@ function TopBar() {
             }}
           />
         </Stack>
-        <Typography variant="body2" sx={{ mt: 1, color: colors.textSecondary, fontFamily: fonts.ui }}>
-          {t("dashboardUser")} <Box component="span" sx={{ color: colors.textPrimary }}>{accountName}</Box> {t("realTimeSignalUpdates")}
+        <Typography
+          variant="body2"
+          sx={{ mt: 1, color: colors.textSecondary, fontFamily: fonts.ui }}
+        >
+          {t("dashboardUser")}{" "}
+          <Box component="span" sx={{ color: colors.textPrimary }}>
+            {accountName}
+          </Box>{" "}
+          {t("realTimeSignalUpdates")}
         </Typography>
       </Box>
 
@@ -407,7 +414,8 @@ function TelemetryPanel({ data }) {
               variant="caption"
               sx={{ ...textStyles.mono, display: "block", mt: 0.5, color: colors.textMuted }}
             >
-              {data?.manufacturer || "N/A"} {data?.model || ""} · ANDROID {data?.androidVersion || ""}
+              {data?.manufacturer || "N/A"} {data?.model || ""} · ANDROID{" "}
+              {data?.androidVersion || ""}
             </Typography>
           </Box>
         </Stack>
@@ -423,7 +431,10 @@ function TelemetryPanel({ data }) {
                 boxShadow: data ? `0 0 10px ${colors.cyan}` : "none",
               }}
             />
-            <Typography variant="caption" sx={{ color: data ? colors.cyanSoft : colors.textMuted, fontFamily: fonts.ui }}>
+            <Typography
+              variant="caption"
+              sx={{ color: data ? colors.cyanSoft : colors.textMuted, fontFamily: fonts.ui }}
+            >
               {data ? t("trackingActive") : "Offline"}
             </Typography>
           </Stack>
@@ -459,7 +470,10 @@ function TelemetryPanel({ data }) {
           py: 2.5,
         }}
       >
-        <Metric label="LAST PING" value={data ? new Date(data.lastTimestamp).toLocaleTimeString() : "N/A"} />
+        <Metric
+          label="LAST PING"
+          value={data ? new Date(data.lastTimestamp).toLocaleTimeString() : "N/A"}
+        />
         <Metric label="ACCURACY" value={data ? "HIGH PRECISE" : "N/A"} />
         <Box sx={{ gridColumn: "1 / -1" }}>
           <Typography variant="caption" sx={monoLabelSx}>
@@ -468,7 +482,9 @@ function TelemetryPanel({ data }) {
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
             <IconGlyph name="location_on" size={15} color={colors.cyan} />
             <Typography variant="body2" sx={{ color: colors.white, fontFamily: fonts.ui }}>
-              {data ? `${data.lastLatitude.toFixed(4)}, ${data.lastLongitude.toFixed(4)}` : "Location Unknown"}
+              {data
+                ? `${data.lastLatitude.toFixed(4)}, ${data.lastLongitude.toFixed(4)}`
+                : "Location Unknown"}
             </Typography>
           </Stack>
         </Box>
@@ -556,7 +572,7 @@ function MapPanel({ zoom, onZoomChange, device }) {
   const center = device ? [device.lastLatitude, device.lastLongitude] : [10.762622, 106.660172];
 
   useEffect(() => {
-      setLastUpdateTime(new Date().toLocaleTimeString());
+    setLastUpdateTime(new Date().toLocaleTimeString());
   }, [device]);
 
   return (
@@ -613,27 +629,32 @@ function MapPanel({ zoom, onZoomChange, device }) {
           backgroundColor: colors.panelDeep,
         }}
       >
-          {/* REPLACE SVG MAP WITH REAL LEAFLET MAP */}
-          <Box sx={{ position: 'absolute', inset: 0 }}>
-            <MapContainer
-                center={center}
-                zoom={15}
-                scrollWheelZoom
-                style={{ height: "100%", width: "100%", background: "#0e1721" }}
-            >
-                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                <MapController center={center} zoom={15} />
+        {/* REPLACE SVG MAP WITH REAL LEAFLET MAP */}
+        <Box sx={{ position: "absolute", inset: 0 }}>
+          <MapContainer
+            center={center}
+            zoom={15}
+            scrollWheelZoom
+            style={{ height: "100%", width: "100%", background: "#0e1721" }}
+          >
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <MapController center={center} zoom={15} />
 
-                {device && (
-                    <Marker position={center} icon={new L.DivIcon({
-                        className: "sentinel-live-marker",
-                        html: `<div style="width: 12px; height: 12px; border-radius: 50%; background: ${colors.cyan}; border: 2px solid #fff; box-shadow: 0 0 18px ${colors.cyan};"></div>`,
-                        iconSize: [12, 12],
-                        iconAnchor: [6, 6],
-                    })} />
-                )}
-            </MapContainer>
-          </Box>
+            {device && (
+              <Marker
+                position={center}
+                icon={
+                  new L.DivIcon({
+                    className: "sentinel-live-marker",
+                    html: `<div style="width: 12px; height: 12px; border-radius: 50%; background: ${colors.cyan}; border: 2px solid #fff; box-shadow: 0 0 18px ${colors.cyan};"></div>`,
+                    iconSize: [12, 12],
+                    iconAnchor: [6, 6],
+                  })
+                }
+              />
+            )}
+          </MapContainer>
+        </Box>
 
         <Stack
           direction="row"
@@ -802,18 +823,46 @@ function ThreatPanel({ data, reviewed, onReview }) {
         elevation={0}
         sx={{
           borderRadius: "0px",
-          border: `1px solid ${latestEvent?.eventType.includes('DANGER') || latestEvent?.eventType.includes('LOST') ? colors.danger : colors.cyan}80`,
-          backgroundColor: latestEvent?.eventType.includes('DANGER') || latestEvent?.eventType.includes('LOST') ? colors.dangerPanel : colors.panelTranslucent,
+          border: `1px solid ${
+            latestEvent?.eventType.includes("DANGER") || latestEvent?.eventType.includes("LOST")
+              ? colors.danger
+              : colors.cyan
+          }80`,
+          backgroundColor:
+            latestEvent?.eventType.includes("DANGER") || latestEvent?.eventType.includes("LOST")
+              ? colors.dangerPanel
+              : colors.panelTranslucent,
           p: 2,
-          boxShadow: latestEvent?.eventType.includes('DANGER') || latestEvent?.eventType.includes('LOST') ? shadows.dangerGlow : shadows.insetGlow,
+          boxShadow:
+            latestEvent?.eventType.includes("DANGER") || latestEvent?.eventType.includes("LOST")
+              ? shadows.dangerGlow
+              : shadows.insetGlow,
         }}
       >
         <Stack direction="row" justifyContent="space-between" alignItems="center">
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ color: latestEvent?.eventType.includes('DANGER') || latestEvent?.eventType.includes('LOST') ? colors.dangerSoft : colors.cyan }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            sx={{
+              color:
+                latestEvent?.eventType.includes("DANGER") || latestEvent?.eventType.includes("LOST")
+                  ? colors.dangerSoft
+                  : colors.cyan,
+            }}
+          >
             <IconGlyph name="shield" size={18} />
             <Typography
               variant="caption"
-              sx={{ ...textStyles.label, color: latestEvent?.eventType.includes('DANGER') || latestEvent?.eventType.includes('LOST') ? colors.dangerSoft : colors.cyan, fontWeight: 600 }}
+              sx={{
+                ...textStyles.label,
+                color:
+                  latestEvent?.eventType.includes("DANGER") ||
+                  latestEvent?.eventType.includes("LOST")
+                    ? colors.dangerSoft
+                    : colors.cyan,
+                fontWeight: 600,
+              }}
             >
               03 / THREAT STACK
             </Typography>
@@ -834,24 +883,26 @@ function ThreatPanel({ data, reviewed, onReview }) {
         </Stack>
 
         {latestEvent ? (
-            <Box sx={{ mt: 2, borderLeft: `2px solid ${colors.danger}`, pl: 1.5 }}>
-              <Stack direction="row" justifyContent="space-between" spacing={1}>
-                <Typography variant="body2" sx={{ color: colors.white, fontWeight: 600 }}>
-                  {latestEvent.eventType.replace(/_/g, ' ')}
-                </Typography>
-                <Typography variant="caption" sx={{ ...textStyles.mono, color: colors.dangerSoft }}>
-                  {new Date(latestEvent.timestamp).toLocaleTimeString()}
-                </Typography>
-              </Stack>
-              <Typography
-                variant="body2"
-                sx={{ mt: 0.5, color: colors.textSecondary, fontSize: "12px", lineHeight: 1.6 }}
-              >
-                {latestEvent.details || "Activity detected on your device."}
+          <Box sx={{ mt: 2, borderLeft: `2px solid ${colors.danger}`, pl: 1.5 }}>
+            <Stack direction="row" justifyContent="space-between" spacing={1}>
+              <Typography variant="body2" sx={{ color: colors.white, fontWeight: 600 }}>
+                {latestEvent.eventType.replace(/_/g, " ")}
               </Typography>
-            </Box>
+              <Typography variant="caption" sx={{ ...textStyles.mono, color: colors.dangerSoft }}>
+                {new Date(latestEvent.timestamp).toLocaleTimeString()}
+              </Typography>
+            </Stack>
+            <Typography
+              variant="body2"
+              sx={{ mt: 0.5, color: colors.textSecondary, fontSize: "12px", lineHeight: 1.6 }}
+            >
+              {latestEvent.details || "Activity detected on your device."}
+            </Typography>
+          </Box>
         ) : (
-            <Typography variant="body2" sx={{ mt: 2, color: colors.textSecondary }}>No threats detected.</Typography>
+          <Typography variant="body2" sx={{ mt: 2, color: colors.textSecondary }}>
+            No threats detected.
+          </Typography>
         )}
       </Paper>
 
@@ -865,23 +916,32 @@ function ThreatPanel({ data, reviewed, onReview }) {
           </Typography>
         </Stack>
         <Stack spacing={1.5} sx={{ mt: 1.5 }}>
-          {data && data.map((event) => (
-            <Box
-              key={event._id}
-              sx={{
-                borderLeft: `1px solid ${colors.cyan}73`,
-                pl: 1.5,
-              }}
-            >
-              <Typography variant="caption" sx={{ ...textStyles.mono, color: colors.textMuted }}>
-                {new Date(event.timestamp).toLocaleTimeString()} · {event.eventType}
+          {data &&
+            data.map((event) => (
+              <Box
+                key={event._id}
+                sx={{
+                  borderLeft: `1px solid ${colors.cyan}73`,
+                  pl: 1.5,
+                }}
+              >
+                <Typography variant="caption" sx={{ ...textStyles.mono, color: colors.textMuted }}>
+                  {new Date(event.timestamp).toLocaleTimeString()} · {event.eventType}
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{ mt: 0.5, color: colors.textPrimary, fontSize: "12px" }}
+                >
+                  {event.details || "Automated check-in"}
+                </Typography>
+              </Box>
+            ))}
+          {!data ||
+            (data.length === 0 && (
+              <Typography variant="caption" color="textSecondary">
+                Waiting for signals...
               </Typography>
-              <Typography variant="body2" sx={{ mt: 0.5, color: colors.textPrimary, fontSize: "12px" }}>
-                {event.details || "Automated check-in"}
-              </Typography>
-            </Box>
-          ))}
-          {!data || data.length === 0 && <Typography variant="caption" color="textSecondary">Waiting for signals...</Typography>}
+            ))}
         </Stack>
       </Paper>
 
@@ -1059,9 +1119,8 @@ function SentinelConsole() {
     try {
       const devices = await deviceService.getDeviceList(user.username, user.token);
       // Filter out Web Portal entries
-      const mobileDevices = devices.filter(d =>
-          !d.deviceName?.includes("Web") &&
-          !d._id?.startsWith("web-")
+      const mobileDevices = devices.filter(
+        (d) => !d.deviceName?.includes("Web") && !d._id?.startsWith("web-")
       );
 
       if (mobileDevices.length > 0) {
@@ -1069,7 +1128,9 @@ function SentinelConsole() {
       }
       const activity = await deviceService.getSecurityEvents(user.username, user.token);
       setEvents(activity.slice(0, 5));
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   useEffect(() => {
@@ -1094,20 +1155,28 @@ function SentinelConsole() {
     }
 
     try {
-        if (action === "lock") {
-            await deviceService.toggleLostMode(user.username, true, "Remote lock", user.phone, user.token);
-            setStatus("Lock command sent");
-        } else if (action === "ring") {
-            await deviceService.toggleAlarm(user.username, true, user.token);
-            setStatus("Siren activated");
-        } else if (action === "wipe") {
-            await fetch(`${process.env.REACT_APP_API_BASE}/api/${user.username}/wipe`, {
-                method: "POST",
-                headers: { "Authorization": `Bearer ${user.token}`, "ngrok-skip-browser-warning": "true" }
-            });
-            setStatus("Wipe command sent");
-        }
-    } catch (e) { setStatus("Error: " + e.message); }
+      if (action === "lock") {
+        await deviceService.toggleLostMode(
+          user.username,
+          true,
+          "Remote lock",
+          user.phone,
+          user.token
+        );
+        setStatus("Lock command sent");
+      } else if (action === "ring") {
+        await deviceService.toggleAlarm(user.username, true, user.token);
+        setStatus("Siren activated");
+      } else if (action === "wipe") {
+        await fetch(`${process.env.REACT_APP_API_BASE}/api/${user.username}/wipe`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${user.token}`, "ngrok-skip-browser-warning": "true" },
+        });
+        setStatus("Wipe command sent");
+      }
+    } catch (e) {
+      setStatus("Error: " + e.message);
+    }
 
     setWipeArmed(false);
   };
@@ -1182,7 +1251,11 @@ function SentinelConsole() {
             >
               <TelemetryPanel data={telemetry} />
               <MapPanel zoom={zoom} onZoomChange={setZoom} device={telemetry} />
-              <ThreatPanel data={events} reviewed={reviewed} onReview={() => setReviewed((value) => !value)} />
+              <ThreatPanel
+                data={events}
+                reviewed={reviewed}
+                onReview={() => setReviewed((value) => !value)}
+              />
             </Box>
             <RemoteDock
               status={wipeArmed ? t("remoteActionConfirm") : status}

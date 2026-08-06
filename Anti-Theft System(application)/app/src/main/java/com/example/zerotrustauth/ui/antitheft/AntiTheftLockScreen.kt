@@ -47,7 +47,10 @@ fun AntiTheftLockScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val securityPrefs = remember { SecurityPrefs(context) }
-    val correctPin = "1234" 
+    
+    // Use stored PIN or fallback to default
+    val storedPinState = securityPrefs.localPin.collectAsState(initial = "1234")
+    val correctPin = storedPinState.value ?: "1234"
 
     // Hardware checks
     val biometricManager = remember { BiometricManager.from(context) }

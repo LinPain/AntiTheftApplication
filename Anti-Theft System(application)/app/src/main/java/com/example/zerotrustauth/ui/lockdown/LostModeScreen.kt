@@ -1,13 +1,17 @@
 package com.example.zerotrustauth.ui.lockdown
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,7 +24,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
+import androidx.fragment.app.FragmentActivity
 import com.example.zerotrustauth.ui.components.QrCodeView
+import com.example.zerotrustauth.utils.BiometricHelper
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -34,9 +40,39 @@ fun LostModeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showUnlockDialog by remember { mutableStateOf(false) }
+    val biometricAvailable = remember { BiometricHelper.isBiometricAvailable(context) }
 
     // Prevent back navigation
     BackHandler(enabled = true) { }
+
+    fun performMasterUnlock() {
+        scope.launch {
+            val prefs = com.example.zerotrustauth.data.SecurityPrefs(context)
+            // 1. Clear local locks
+            prefs.clearAllLocks()
+
+            // 2. IMPORTANT: Update backend so it doesn't re-lock us on next sync
+            val token = prefs.authToken.first()
+            val username = prefs.username.first()?.lowercase()?.trim()
+            if (token != null && username != null) {
+                try {
+                    val api = com.example.zerotrustauth.network.LocationApiService.create(token)
+                    // Tell server the owner manually unlocked
+                    api.notifyGenericAlert(username, com.example.zerotrustauth.network.GenericAlertRequest("OWNER_UNLOCKED_DEVICE", emptyMap()))
+                    
+                    // Disable Lost Mode on server
+                    api.setLostMode(username, com.example.zerotrustauth.network.LostModeRequest(active = false))
+                } catch (e: Exception) {
+                    android.util.Log.e("LostMode", "Failed to sync unlock to server: ${e.message}")
+                }
+            }
+            
+            // Stop lock task (pinning)
+            (context as? ComponentActivity)?.stopLockTask()
+            
+            Toast.makeText(context, "Thiết bị đã được mở khoá!", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -148,7 +184,77 @@ fun LostModeScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(64.dp))
+        Spacer(modifier = Modifier.height(48.dp))
+
+        if (biometricAvailable) {
+            Button(
+                onClick = {
+                    val activity = context as? FragmentActivity
+                    if (activity != null) {
+                        BiometricHelper.showBiometricPrompt(
+                            activity = activity,
+                            onSuccess = { performMasterUnlock() },
+                            onError = { _, err -> Toast.makeText(context, err, Toast.LENGTH_SHORT).show() },
+                            onFailed = { Toast.makeText(context, "Xác thực vân tay thất bại", Toast.LENGTH_SHORT).show() }
+                        )
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp),
+                shape = RoundedCornerShape(32.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White)
+            ) {
+                Icon(Icons.Default.Fingerprint, contentDescription = null, tint = Color(0xFFE53935))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    "QUÉT VÂN TAY ĐỂ MỞ KHOÁ",
+                    color = Color(0xFFE53935),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Separate button for PIN as a secondary option
+            OutlinedButton(
+                onClick = { showUnlockDialog = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(28.dp),
+                border = androidx.compose.foundation.BorderStroke(2.dp, Color.White.copy(alpha = 0.8f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+            ) {
+                Text(
+                    "SỬ DỤNG MÃ PIN (DỰ PHÒNG)",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp
+                )
+            }
+        } else {
+            // Failsafe for devices without fingerprint: PIN becomes the primary button
+            Button(
+                onClick = { showUnlockDialog = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp),
+                shape = RoundedCornerShape(32.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White)
+            ) {
+                Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFE53935))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    "XÁC THỰC MÃ PIN",
+                    color = Color(0xFFE53935),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
 
         if (phoneNumber.isNotEmpty()) {
             Button(
@@ -160,7 +266,7 @@ fun LostModeScreen(
                     .fillMaxWidth()
                     .height(64.dp),
                 shape = RoundedCornerShape(32.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White)
+                colors = ButtonDefaults.buttonColors(containerColor = if (biometricAvailable) Color.White.copy(alpha = 0.8f) else Color.White)
             ) {
                 Icon(Icons.Default.Call, contentDescription = null, tint = Color(0xFFE53935))
                 Spacer(modifier = Modifier.width(12.dp))
@@ -181,24 +287,18 @@ fun LostModeScreen(
             color = Color.White.copy(alpha = 0.7f),
             textAlign = TextAlign.Center
         )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        TextButton(onClick = { showUnlockDialog = true }) {
-            Text("XÁC THỰC CHỦ SỞ HỮU", color = Color.White.copy(alpha = 0.5f))
-        }
     }
 
     if (showUnlockDialog) {
         AlertDialog(
             onDismissRequest = { showUnlockDialog = false },
-            title = { Text("Xác thực chủ sở hữu") },
+            title = { Text("Xác thực mã PIN (Failsafe)") },
             text = {
                 var pin by remember { mutableStateOf("") }
                 var error by remember { mutableStateOf<String?>(null) }
                 
                 Column {
-                    Text("Nhập mã PIN bảo mật của bạn để mở khoá thiết bị.", style = MaterialTheme.typography.bodySmall)
+                    Text("Đây là phương thức dự phòng nếu vân tay không hoạt động. Nhập mã PIN 4 số của bạn.", style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(16.dp))
                     OutlinedTextField(
                         value = pin,
@@ -220,25 +320,7 @@ fun LostModeScreen(
                                 val prefs = com.example.zerotrustauth.data.SecurityPrefs(context)
                                 val correctPin = prefs.localPin.first()
                                 if (pin == correctPin) {
-                                    // 1. Clear local locks
-                                    prefs.clearAllLocks()
-
-                                    // 2. IMPORTANT: Update backend so it doesn't re-lock us on next sync
-                                    val token = prefs.authToken.first()
-                                    val username = prefs.username.first()?.lowercase()?.trim()
-                                    if (token != null && username != null) {
-                                        try {
-                                            val api = com.example.zerotrustauth.network.LocationApiService.create(token)
-                                            // Tell server the owner manually unlocked
-                                            api.notifyGenericAlert(username, com.example.zerotrustauth.network.GenericAlertRequest("OWNER_UNLOCKED_DEVICE", emptyMap()))
-                                            
-                                            // Disable Lost Mode on server
-                                            api.setLostMode(username, com.example.zerotrustauth.network.LostModeRequest(active = false))
-                                        } catch (e: Exception) {
-                                            android.util.Log.e("LostMode", "Failed to sync unlock to server: ${e.message}")
-                                        }
-                                    }
-
+                                    performMasterUnlock()
                                     showUnlockDialog = false
                                 } else {
                                     error = "Mã PIN không chính xác"

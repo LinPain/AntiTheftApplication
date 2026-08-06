@@ -68,7 +68,11 @@ function MFA() {
   };
 
   if (!username) {
-    return <Typography variant="h6" textAlign="center" py={5} color="white">Lỗi: Không tìm thấy thông tin tài khoản.</Typography>;
+    return (
+      <Typography variant="h6" textAlign="center" py={5} color="white">
+        Lỗi: Không tìm thấy thông tin tài khoản.
+      </Typography>
+    );
   }
 
   return (
@@ -85,16 +89,28 @@ function MFA() {
           onChange={(e) => setOtp(e.target.value)}
           fullWidth
           sx={fieldSx}
-          inputProps={{ style: { textAlign: 'center', letterSpacing: '0.5rem', fontSize: '1.5rem' } }}
+          inputProps={{
+            style: { textAlign: "center", letterSpacing: "0.5rem", fontSize: "1.5rem" },
+          }}
         />
 
         {error && (
-          <Alert severity="error" sx={{ borderRadius: 0, backgroundColor: `${colors.danger}26`, color: colors.dangerSoft }}>
+          <Alert
+            severity="error"
+            sx={{
+              borderRadius: 0,
+              backgroundColor: `${colors.danger}26`,
+              color: colors.dangerSoft,
+            }}
+          >
             {error}
           </Alert>
         )}
         {msg && (
-          <Alert severity="success" sx={{ borderRadius: 0, backgroundColor: `${colors.teal}26`, color: colors.teal }}>
+          <Alert
+            severity="success"
+            sx={{ borderRadius: 0, backgroundColor: `${colors.teal}26`, color: colors.teal }}
+          >
             {msg}
           </Alert>
         )}

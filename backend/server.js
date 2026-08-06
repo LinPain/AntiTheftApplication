@@ -18,7 +18,11 @@ locationRoutes.setGetUserState(getUserState);
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] }
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"],
+        allowedHeaders: ["Authorization", "Content-Type", "ngrok-skip-browser-warning"]
+    }
 });
 app.set('io', io);
 
@@ -28,21 +32,57 @@ const MOCK_OTP = process.env.MOCK_OTP === 'true';
 
 // --- EMAIL CONFIG ---
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
 });
 
-const sendOTPEmail = async (email, code, type, username = 'User') => {
-    let subject = 'Anti-Theft System - Authentication';
-    let msgText = `Code: ${code}`;
-    if (type === 'LOGIN') subject = 'Mã xác thực ĐĂNG NHẬP', msgText = `Mã: ${code}. Hiệu lực 10 phút.`;
-    if (type === 'REGISTRATION') subject = 'Xác minh ĐĂNG KÝ', msgText = `Chào ${username}! Mã: ${code}`;
-    if (type === 'RESET') subject = 'Đặt lại MẬT KHẨU', msgText = `Mã reset: ${code}`;
+transporter.verify((error, success) => {
+  if (error) {
+    console.error("SMTP ERROR:", error);
+  } else {
+    console.log("SMTP Server is ready.");
+  }
+});
 
-    await transporter.sendMail({
-        from: process.env.EMAIL_USER, to: email,
-        subject: `Anti-Theft System - ${subject}`, text: msgText
-    });
+const sendOTPEmail = async (email, code, type, username = "User") => {
+    let subject = "Anti-Theft System - Authentication";
+    let msgText = `Code: ${code}`;
+
+    if (type === "LOGIN") {
+        subject = "Mã xác thực ĐĂNG NHẬP";
+        msgText = `Mã: ${code}. Hiệu lực 10 phút.`;
+    }
+
+    if (type === "REGISTRATION") {
+        subject = "Xác minh ĐĂNG KÝ";
+        msgText = `Chào ${username}! Mã: ${code}`;
+    }
+
+    if (type === "RESET") {
+        subject = "Đặt lại MẬT KHẨU";
+        msgText = `Mã reset: ${code}`;
+    }
+
+    try {
+        console.log("Sending OTP to:", email);
+
+        const info = await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: `Anti-Theft System - ${subject}`,
+            text: msgText,
+        });
+
+        console.log("Mail sent:", info.response);
+
+    } catch (err) {
+        console.error("EMAIL ERROR:");
+        console.error(err);
+        throw err;
+    }
 };
 
 const sendSecurityAlert = async (username, event, details = '') => {
@@ -117,7 +157,14 @@ const createOTP = async (username, type, email) => {
     const identifier = username.toLowerCase().trim();
     await OTPLog.deleteMany({ identifier, type });
     await new OTPLog({ identifier, code, type, expiresAt: new Date(Date.now() + 600000) }).save();
-    await sendOTPEmail(email, code, type, username);
+
+    // Attempt to send email, but don't let it crash the process if it fails
+    try {
+        await sendOTPEmail(email, code, type, username);
+    } catch (emailErr) {
+        console.warn(`[WARNING] Email failed to send for ${type}. If MOCK_OTP is enabled, you can still use the code from the response.`);
+    }
+
     return code;
 };
 
